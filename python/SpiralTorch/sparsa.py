@@ -9,7 +9,9 @@ import time
 # from torch.special import gammaln
 import xarray as xr
 
-import fista
+from SpiralTorch import fista
+
+# import loss
 
 from typing import List, Dict, Callable
 
@@ -54,6 +56,25 @@ def create_x_kwargs(x:dict,key:str):
     x_new = x.copy()
     x_new.pop(key)
     return x_new
+
+
+"""
+Notes on expectations for forward models
+Forward models are expected to return a dictonary with arguments that correspond to the noise
+model's forward model kwargs (called out in the loss function definition).
+For example the Poisson noise model uses just one term: 'y_mean_est', but the Gaussian requires
+'y_mean_est' and 'y_var_est' to be supplied.
+
+Notes on expectations for observations
+Observations are expected to take the form of dictionaries containing the keyword arguments
+for the called loss function.  Each loss definition will specify if the kwarg comes from the
+forward model or observation dct.
+Expected form for multiple channels looks as follows
+y_obs_dct_lst = [{'counts':ch1_counts,'shot_count':ch1_shots},{'counts':ch2_counts,'shot_count':ch2_shots}]
+where each dct is the kwarg sets for each channel
+
+
+"""
 
 
 class sparsa_torch_autograd:
@@ -190,8 +211,7 @@ class sparsa_torch_autograd:
     def load_fit_parameters(self,x:Dict[str,torch.tensor],
                             y_obs_dct_lst:List[Dict[str,torch.tensor]],
                             fwd_model_lst:List[Callable],
-                            fit_var:str,
-                            model_scale:float=1.0):
+                            fit_var:str,):
         """
         Set all the fitting terms
             x: Dict[torch.tensor]
@@ -230,47 +250,54 @@ class sparsa_torch_autograd:
         # configured to optimize
         self.fit_var = fit_var
         
-        # asve the observation data
+        # save the observation data
         # force it to be the correct data type
         self.y_obs_dct_lst = []
-        self.channel_mask_lst = []  # set mask to default value
-        for y_obs in y_obs_lst:
-            self.y_obs_lst.append(y_obs.type(self.dtype))
-            self.channel_mask_lst.append(torch.ones(y_obs.shape,dtype=self.dtype,device=self.device))
-
-        # set the channel weights to 1 if they have not
-        # been initialized
-        if self.chan_weight_lst is None:
-            self.chan_weight_lst = [torch.ones(1,dtype=self.dtype,device=self.device)]*len(self.y_obs_lst)
+        for y_obs in y_obs_dct_lst:
+            y_obs_dct = {}
+            for obs in y_obs:
+                y_obs_dct[obs] = y_obs[obs].type(self.dtype)
+            self.y_obs_dct_lst.append(y_obs_dct)
 
         # setup the optimization variable
         # and subproblem functions
-        self.set_fit_param(x,model_scale=model_scale)
+        self.set_fit_param(x)
+    
+    def set_loss_fn(self,fnc):
+        """
+        set the loss function by passing in
+        fnc, the loss function (typically from loss.py)
+        """
+        self.loss_fn = fnc
         
-    def set_loss_poisson(self):
-        self.loss_fn = self.pois_loss_fn
-        # print("spiral loss function set to \'poisson\'")
+    # def set_loss_poisson(self):
+    #     self.loss_fn = loss.pois_loss_fn # self.pois_loss_fn
+    #     # print("spiral loss function set to \'poisson\'")
 
-    def set_loss_deadtime(self,y_active_lst:List[torch.tensor]):
-        # requires that the active time histograms for each channel
-        # are passed into the this function
-        self.y_active_lst = []
-        for y_act in y_active_lst:
-            self.y_active_lst.append(y_act.type(self.dtype))
-        self.loss_fn = self.deadtime_loss_fn
-        # print("spiral loss function set to \'deadtime\'")
+    # def set_loss_deadtime(self):
+    #     self.loss_fn = self.deadtime_loss_fn
+    #     # requires that the active time histograms for each channel
+    #     # are passed into the this function
+    #     # self.y_active_lst = []
+    #     # for y_act in y_active_lst:
+    #     #     self.y_active_lst.append(y_act.type(self.dtype))
+    #     # self.loss_fn = self.deadtime_loss_fn
+    #     # print("spiral loss function set to \'deadtime\'")
 
-    def set_loss_gaus(self):
-        self.loss_fn = self.gaus_fn
-        # print("spiral loss function set to \'gaussian\'")
+    # # TODO:  How to handle multiple component noise models?
+    # #  e.g. Gaussian has both variance and mean estimates that
+    # #  fold into the loss function, not the forward model.
+    # def set_loss_gaus(self):
+    #     self.loss_fn = self.gaus_fn
+    #     # print("spiral loss function set to \'gaussian\'")
 
-    def set_loss_gaus_approx(self):
-        self.loss_fn = self.gaus_approx_fn
+    # def set_loss_gaus_approx(self):
+    #     self.loss_fn = self.gaus_approx_fn
 
-        # set estimated variance weighting
-        for idx, y_obs in enumerate(self.y_obs_lst):
-            self.channel_mask_lst[idx]*=1.0/torch.maximum(1.0,y_obs)
-        # print("spiral loss function set to \'gaussian approx\'")
+    #     # set estimated variance weighting
+    #     # for idx, y_obs in enumerate(self.y_obs_lst):
+    #     #     self.channel_mask_lst[idx]*=1.0/torch.maximum(1.0,y_obs)
+    #     # print("spiral loss function set to \'gaussian approx\'")
         
     def set_fista(self,fista_ver_str, order:int=1):
         """
@@ -314,11 +341,12 @@ class sparsa_torch_autograd:
         # reset the total subproblem step to zero
         self.total_rel_step = 0
     
-    def set_fit_param(self,x:Dict[str,torch.tensor],model_scale:float=1.0):
+    def set_fit_param(self,x:Dict[str,torch.tensor]):
         """
         Configure the optimization routine for a particular
         state of x, with a predefined optimization variable
 
+        TODO: Remove this
         model_scale: float (defaults to 1.0)
             Scalar multiplier for the model.  Used to account for
             Poisson thinning
@@ -335,7 +363,7 @@ class sparsa_torch_autograd:
             # specifying the value of the fit variable as a variable in the function (self.fit_var:x)
             # by specifying the fit variable to the function, it allows us to selectively call update steps
             # and save time on the forward model.
-            self.fwd_model_lst+=[lambda x,idx_loc=idx: model_scale*self.base_fwd_model_lst[idx_loc](**{'fit_var':self.fit_var,self.fit_var:x},**self.x_kwargs)]
+            self.fwd_model_lst+=[lambda x,idx_loc=idx: self.base_fwd_model_lst[idx_loc](**{'fit_var':self.fit_var,self.fit_var:x},**self.x_kwargs)]
         
         # set the fit parameter from the dictionary
         self.x = copy.deepcopy(x[self.fit_var]).requires_grad_(True) # this sets the initial condition
@@ -363,62 +391,138 @@ class sparsa_torch_autograd:
     """
     General Definitions - possibly move to subclass
     """
+
+    def calc_loss(self,x:torch.tensor)->torch.tensor:
+        """
+        generalized loss calculator
+        """
+        loss = torch.tensor(0, device=self.device, dtype=self.dtype) # torch.zeros(1, device=self.device, dtype=self.dtype)
+        for idx,mod in enumerate(self.fwd_model_lst):
+            # the forward model should return a dict of output terms\
+            # to accomidate multi-parameter PDFs
+            y_est = mod(x)  
+            loss += self.loss_fn(**y_est,**self.y_obs_dct_lst[idx])
         
-    def pois_loss_fn(self,x:torch.tensor)->torch.tensor:
-        """
-        x: torch.tensor
-            estimated state variable     
-        """
+        return loss
+        
+    # def pois_loss_fn(self,y_mean_est:torch.tensor=None,
+    #                  counts:torch.tensor=None,
+    #                  shot_count:torch.tensor=1.0,
+    #                  channel_mask:torch.tensor=1.0,
+    #                  channel_weight:torch.tensor=1.0)->torch.tensor:
+    #     """
+    #     single channel Poisson loss for loss function definitions.
+    #     Any argument with default None needs to be provided
 
-        loss = torch.tensor(0, device=self.device, dtype=self.dtype) # torch.zeros(1, device=self.device, dtype=self.dtype)
-        for idx,mod in enumerate(self.fwd_model_lst):
-            y_est = mod(x)
-            # loss += self.chan_weight_lst[idx]*(y_est-self.y_obs_lst[idx]*torch.log(y_est)).sum()
-            loss += self.chan_weight_lst[idx]*(self.channel_mask_lst[idx]*y_est-self.channel_mask_lst[idx]*self.y_obs_lst[idx]*torch.log(y_est)).sum()
-
-        return loss   
+    #     y_mean_est:torch.tensor=None,
+    #         from forward model
+    #     counts:torch.tensor=None,
+    #         from observations
+    #         Photon counts in each histogram bin
+    #     shot_count:torch.tensor=None,
+    #         from observations
+    #         number of laser shots.  can also include 
+    #         bin accumulation time and other forward model scalars
+    #     channel_mask:torch.tensor=1.0,
+    #         from observations
+    #         pixel based masking or weighting
+    #     channel_weight:torch.tensor=1.0
+    #         from observations
+    #         total channel weighting
+        
+    #     """
+    #     return channel_weight*(channel_mask*(shot_count*y_mean_est-counts*torch.log(y_mean_est))).sum()
     
-    def deadtime_loss_fn(self,x:torch.tensor)->torch.tensor:
-        """
-        x: torch.tensor
-            estimated state variable     
-        """
+    # def deadtime_loss_fn(self,y_mean_est:torch.tensor=None,
+    #                      counts:torch.tensor=None,
+    #                      active_time:torch.tensor=None,
+    #                      channel_mask:torch.tensor=1.0,
+    #                      channel_weight:torch.tensor=1.0)->torch.tensor:
+    #     """
+    #     single channel deadtime loss for loss function definitions.
+    #     Any argument with default None needs to be provided 
 
-        loss = torch.tensor(0, device=self.device, dtype=self.dtype) # torch.zeros(1, device=self.device, dtype=self.dtype)
-        for idx,mod in enumerate(self.fwd_model_lst):
-            y_est = mod(x)
-            loss += self.chan_weight_lst[idx]*(self.channel_mask_lst[idx]*self.y_active_lst[idx]*y_est-self.channel_mask_lst[idx]*self.y_obs_lst[idx]*torch.log(y_est)).sum()
+    #     y_mean_est:torch.tensor=None,
+    #         from forward model
+        
+    #     counts:torch.tensor=None,
+    #         from observations
+    #         Photon counts in each histogram bin
+    #     active_time:torch.tensor=None,
+    #         from observations
+    #         detector active_time for each histogram bin
+    #     channel_mask:torch.tensor=1.0,
+    #         from observations
+    #         pixel based masking or weighting
+    #     channel_weight:torch.tensor=1.0
+    #         from observations
+    #         total channel weighting  
+    #     """
 
-        return loss
+    #     return channel_weight*(channel_mask*(active_time*y_mean_est-counts*torch.log(y_mean_est))).sum()
 
-    def gaus_fn(self,x:torch.tensor)->torch.tensor:
-        """
-        x: torch.tensor
-            estimated state variable 
-        Gaussian loss function where mean = variance
-        """ 
+    # def gaus_fn(self,
+    #             y_mean_est:torch.tensor=None,
+    #             y_var_est:torch.tensor=None,
+    #             counts:torch.tensor=None,
+    #             shot_count:torch.tensor=1.0,
+    #             channel_mask:torch.tensor=1.0,
+    #             channel_weight:torch.tensor=1.0)->torch.tensor:
+    #     """
+    #     y_mean_est:torch.tensor=None,
+    #         from forward model
+    #     y_var_est:torch.tensor=None,
+    #         from forward model
+        
+    #     counts:torch.tensor=None,
+    #         from observations
+    #         Photon counts in each histogram bin
+    #     shot_count:torch.tensor=None,
+    #         from observations
+    #         number of laser shots.  can also include 
+    #         bin accumulation time and other forward model scalars
+    #     channel_mask:torch.tensor=1.0,
+    #         from observations
+    #         pixel based masking or weighting
+    #     channel_weight:torch.tensor=1.0
+    #         from observations
+    #         total channel weighting 
+    #     """ 
+    #     return channel_weight*(channel_mask*(0.5*torch.log(2.0*self.pi*y_var_est*shot_count**2)+(y_mean_est*shot_count-counts)**2/(2*y_var_est*shot_count**2))).sum()
+        
 
-        loss = torch.tensor(0, device=self.device, dtype=self.dtype) # torch.zeros(1, device=self.device, dtype=self.dtype)
-        for idx,mod in enumerate(self.fwd_model_lst):
-            y_est = mod(x)
-            loss += self.chan_weight_lst[idx]*(self.channel_mask_lst[idx]*(0.5*torch.log(2.0*self.pi*y_est)+(y_est-self.y_obs_lst[idx])**2/y_est)).sum()
+    # def gaus_mean_fn(self,
+    #                    y_mean_est:torch.tensor=None,
+    #                    counts:torch.tensor=None,
+    #                    shot_count:torch.tensor=1.0,
+    #                    variance:torch.tensor=None,
+    #                    channel_mask:torch.tensor=1.0,
+    #                    channel_weight:torch.tensor=1.0)->torch.tensor:
+    #     """
+    #     # Gaussian noise with known variance
 
-        return loss
+    #     y_mean_est:torch.tensor=None,
+    #         from forward model
+        
+    #     counts:torch.tensor=None,
+    #         from observations
+    #         Photon counts in each histogram bin
+    #     shot_count:torch.tensor=None,
+    #         from observations
+    #         number of laser shots.  can also include 
+    #         bin accumulation time and other forward model scalars
+    #     variance:torch.tensor=None,
+    #         from observations
+    #         known variance of the observed signal
+    #     channel_mask:torch.tensor=1.0,
+    #         from observations
+    #         pixel based masking or weighting
+    #     channel_weight:torch.tensor=1.0
+    #         from observations
+    #         total channel weighting 
+    #     """ 
 
-    def gaus_approx_fn(self,x:torch.tensor)->torch.tensor:
-        """
-        x: torch.tensor
-            estimated state variable 
-        approximate Gaussian loss function with known variance
-        The variance is folded into the channel mask
-        """ 
-
-        loss = torch.tensor(0, device=self.device, dtype=self.dtype) # torch.zeros(1, device=self.device, dtype=self.dtype)
-        for idx,mod in enumerate(self.fwd_model_lst):
-            y_est = mod(x)
-            loss += self.chan_weight_lst[idx]*(self.channel_mask_lst[idx]*(y_est-self.y_obs_lst[idx])**2).sum()
-
-        return loss   
+    #     return channel_weight*(channel_mask*((y_mean_est*shot_count-counts)**2/(2*variance*shot_count**2))).sum()
 
     def pen_fn_1stOrder(self,x):
         tv = torch.sum(torch.abs(torch.diff(x,dim=0))) + torch.sum(torch.abs(torch.diff(x,dim=1)))
@@ -443,7 +547,7 @@ class sparsa_torch_autograd:
         x_p1 = self.fista(x-x_grad/alpha,self.penalty_weight/alpha,
                         self.x_lb,self.x_ub)
             
-        obj_p1 = self.loss_fn(x_p1) + self.pen_fn(x_p1)
+        obj_p1 = self.calc_loss(x_p1) + self.pen_fn(x_p1)
         dx_l2_norm_p1 = torch.linalg.norm((x_p1 - x).ravel(), 2)**2
 
         # print(f"{self.loop_iter}, {self.alpha}: {dx_l2_norm_p1}, {obj_p1}")
@@ -479,7 +583,7 @@ class sparsa_torch_autograd:
         terminate_opt = False
         self.start_time = time.time()
 
-        loss = self.loss_fn(self.x)
+        loss = self.calc_loss(self.x)
         self.objective_tnsr[0] = loss + self.pen_fn(self.x)
         self.alpha_tnsr[self.loop_iter] = self.alpha
         loss.backward()  # backprop the gradient
@@ -513,7 +617,7 @@ class sparsa_torch_autograd:
                     rel_step = 0.0
                     self.rel_step_tnsr[self.loop_iter] = rel_step
                     # # self.x.data = copy.deepcopy(x_bu)
-                    # # obj_ret = self.loss_fn(self.x) + self.pen_fn(self.x)
+                    # # obj_ret = self.calc_loss(self.x) + self.pen_fn(self.x)
                     # # status_str += f"\n      returning objective to {obj_ret.item()}"
                     # status_str += f"\n      previous objective was {obj_m1.item()}"
                     # status_str += f"\n      previous tnsr objective was {self.objective_tnsr[self.loop_iter].item()}"
@@ -535,7 +639,7 @@ class sparsa_torch_autograd:
                     #     rel_step = 0.0
                     #     self.rel_step_tnsr[self.loop_iter] = rel_step
                     #     # self.x.data = copy.deepcopy(x_bu)
-                    #     # obj_ret = self.loss_fn(self.x) + self.pen_fn(self.x)
+                    #     # obj_ret = self.calc_loss(self.x) + self.pen_fn(self.x)
                     #     status_str += f"\n      new objective {obj_p1.item()}"
                     #     status_str += f"\n      previous objective was {obj_m1.item()}"
                     #     hist_idx = np.maximum(self.loop_iter-self.M_hist,0)
@@ -564,7 +668,7 @@ class sparsa_torch_autograd:
                     x_diff = x_p1-self.x
 
                     self.x.grad = None
-                    # obj_m2 = self.loss_fn(x_p1) + self.pen_fn(x_p1)
+                    # obj_m2 = self.calc_loss(x_p1) + self.pen_fn(x_p1)
                     # self.x.data = copy.deepcopy(x_p1.data)
                     # self.x.data = x_p1.data.clone()
                     self.x.data = x_p1.clone()  # alters the value of both
@@ -573,7 +677,7 @@ class sparsa_torch_autograd:
                     # self.x.data = x_p1.data
                     # self.x.data += x_diff.data
 
-                    # obj_m2 = self.loss_fn(x_p1) + self.pen_fn(x_p1)
+                    # obj_m2 = self.calc_loss(x_p1) + self.pen_fn(x_p1)
                     self.x.grad = None
 
                     # x_bu = self.x.data # store current state in case of increased step size # changes obj value
@@ -601,7 +705,7 @@ class sparsa_torch_autograd:
 
             # print(f"      step alpha {self.alpha.item()}")
             # print(f"      objective change {obj_p1.item()-self.objective_tnsr[self.loop_iter-1].item()}")
-            loss = self.loss_fn(self.x)
+            loss = self.calc_loss(self.x)
             loss.backward()
             x_m1_grad = copy.deepcopy(x_grad) # .clone()
             x_grad = copy.deepcopy(self.x.grad)
