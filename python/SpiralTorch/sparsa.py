@@ -322,7 +322,7 @@ class sparsa_torch_autograd:
         else:
             # print("Fista configured for 1st Order")
             if fista_ver_str == "cuda-fista":
-                import cuda.fista_cuf as fista_cuf
+                import SpiralTorch.cuda.fista_cuf as fista_cuf
                 self.fista = fista_cuf.solve_FISTA_subproblem_kernel
             else:
                 self.fista = torch.jit.trace(fista.solve_FISTA_subproblem_jit,(self.x,self.alpha,
