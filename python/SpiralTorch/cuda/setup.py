@@ -5,11 +5,11 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 # python setup.py install
 
 setup(
-    name='fista_subproblem',
+    name='st_fista_subproblem',
     ext_modules=[
-        CUDAExtension('fista_cuf', [
-            'fista_cuf.cpp',
-            'fista_cuf_kernel.cu',
+        CUDAExtension('st_fista_cuf', [
+            'st_fista_cuf.cpp',
+            'st_fista_cuf_kernel.cu',
         ])
     ],
     cmdclass={

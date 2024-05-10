@@ -5,12 +5,12 @@
 // Copyright © 2023 University Corporation for Atmospheric Research
 // All rights reserved.
 
-#include "fista_cuf.h"
+#include "st_fista_cuf.h"
 
 #define CHECK_CUDA(x) AT_ASSERTM(x.device().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CPU(x)  AT_ASSERTM(!x.device().is_cuda(), #x " must be a CPU tensor")
 
-torch::Tensor fista_subproblem(
+torch::Tensor st_fista_subproblem(
     torch::Tensor b,
     torch::Tensor lam1,
     torch::Tensor lb,
@@ -26,5 +26,5 @@ torch::Tensor fista_subproblem(
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("fista_subproblem", &fista_subproblem, "FISTA subproblem solver cuda kernel");
+  m.def("st_fista_subproblem", &st_fista_subproblem, "FISTA subproblem solver cuda kernel");
 }

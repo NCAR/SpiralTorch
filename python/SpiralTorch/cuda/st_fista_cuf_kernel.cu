@@ -5,7 +5,7 @@
 // Copyright © 2023 University Corporation for Atmospheric Research
 // All rights reserved.
 
-#include "fista_cuf.h"
+#include "st_fista_cuf.h"
 
 template <typename scalar_t, typename ta_t>
 __global__ void fista_gradient(

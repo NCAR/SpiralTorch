@@ -11,7 +11,9 @@ from torch.utils.cpp_extension import load
 import pathlib
 
 dir = str(pathlib.Path(__file__).parent.resolve())
-f_cu = load('fista_subproblem', [dir + '/fista_cuf.cpp', dir + '/fista_cuf.cu'], verbose=True)
+print("fista_cuf directory")
+print(dir)
+f_cu = load('st_fista_subproblem', [dir + '/st_fista_cuf.cpp', dir + '/st_fista_cuf.cu'], verbose=True)
 
 def solve_FISTA_subproblem_kernel(b:torch.Tensor,lam1:torch.Tensor,
                                   lb:torch.Tensor,ub:torch.Tensor)->torch.Tensor:
@@ -37,4 +39,4 @@ def solve_FISTA_subproblem_kernel(b:torch.Tensor,lam1:torch.Tensor,
     needs to happen prior to calling this function.
     """
 
-    return f_cu.fista_subproblem(b, lam1.cpu(), lb, ub);
+    return f_cu.st_problem(b, lam1.cpu(), lb, ub);
