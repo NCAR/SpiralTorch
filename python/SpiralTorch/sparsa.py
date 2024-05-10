@@ -150,7 +150,7 @@ class sparsa_torch_autograd:
         
         # set alpha
         self.set_alpha(1.0)
-        self.set_alpha_min(1.0)
+        self.set_alpha_min(1e4)
         self.set_alpha_max(1e20)
         
         # set default on history used for
@@ -322,8 +322,8 @@ class sparsa_torch_autograd:
         else:
             # print("Fista configured for 1st Order")
             if fista_ver_str == "cuda-fista":
-                import SpiralTorch.cuda.fista_cuf as fista_cuf
-                self.fista = fista_cuf.solve_FISTA_subproblem_kernel
+                import python.SpiralTorch.cuda.st_fista_cuf as st_fista_cuf
+                self.fista = st_fista_cuf.solve_FISTA_subproblem_kernel
             else:
                 self.fista = torch.jit.trace(fista.solve_FISTA_subproblem_jit,(self.x,self.alpha,
                                                     self.x_lb,self.x_ub))
@@ -786,18 +786,18 @@ class multiSpiral_autograd:
         self.timeout = timeout
 
         # TODO set this in configuration so we can use deadtime
-        self.noise_model = 'poisson'  # poisson, deadtime, gaussian, gaussian_approx
-        self.nll = self.pois_nll
+        self.noise_model = 'none'  # poisson, deadtime, gaussian, gaussian_approx
+        self.nll = None
 
-        self.pi = self.to_tensor(np.pi)
+        # self.pi = self.to_tensor(np.pi)
 
         # TODO reconsider how to handle scaling due to thinning
         # this is not robust for cases where thinning may not be
         # exactly 50:50
         # set thin_factor to 1.0 and scale shot counts appropriately in the mpd_model?
 
-        # model adjustment for poisson thinning
-        self.thin_factor = 0.5
+        # # model adjustment for poisson thinning
+        # self.thin_factor = 0.5
         
         # self.fwd_model_lst
         # self.y_obs_lst
