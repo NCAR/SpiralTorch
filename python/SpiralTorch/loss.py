@@ -2,8 +2,23 @@
 loss functions that can be employed with sparsa optimization
 """
 import torch
+from typing import List
 
 pi_const = 3.14159265359
+
+
+# class loss_fnc_base:
+#     def __init__(self,fwd_var_lst:List[str],noise_var_lst:List[str],name_str:str):
+#         self.fwd_var_lst = fwd_var_lst
+#         self.noise_var_lst = noise_var_lst
+#         self.name_str = name_str
+#     def __str__(self):
+#         return self.name_str
+    
+#     def forward(self,**fwd_model_vars,**noise_model_vars):
+#         return None
+
+
 
 def pois_loss_fn(
         y_mean_est:torch.tensor=None,
