@@ -11,7 +11,7 @@ import xarray as xr
 
 from SpiralTorch import fista
 
-# import loss
+from SpiralTorch import loss
 
 from typing import List, Dict, Callable
 
@@ -263,12 +263,14 @@ class sparsa_torch_autograd:
         # and subproblem functions
         self.set_fit_param(x)
     
-    def set_loss_fn(self,fnc):
+    def set_loss_fn_lst(self,fnc_lst:List[Callable]):
         """
         set the loss function by passing in
         fnc, the loss function (typically from loss.py)
         """
-        self.loss_fn = fnc
+        self.loss_fn_lst = []
+        for fnc in fnc_lst:
+            self.loss_fn_lst.append(fnc)
         
     # def set_loss_poisson(self):
     #     self.loss_fn = loss.pois_loss_fn # self.pois_loss_fn
@@ -401,7 +403,7 @@ class sparsa_torch_autograd:
             # the forward model should return a dict of output terms\
             # to accomidate multi-parameter PDFs
             y_est = mod(x)  
-            loss += self.loss_fn(**y_est,**self.y_obs_dct_lst[idx])
+            loss += self.loss_fn_lst[idx](**y_est,**self.y_obs_dct_lst[idx])
         
         return loss
         
@@ -773,36 +775,19 @@ class multiSpiral_autograd:
         self.x_lb = {}  # lower bounds on estimated variables
         self.x_ub = {}  # upper bounds on estimated variables
 
-        # initialize the channel weight list
-        self.chan_weight_lst = None
-
-        # initialize masks
-        self.channel_mask_lst = None
-
         self.verbose = False  # verbose output during optimization
 
         self.start_time = 0.0
         self.stop_time = 0.0
         self.timeout = timeout
 
-        # TODO set this in configuration so we can use deadtime
-        self.noise_model = 'none'  # poisson, deadtime, gaussian, gaussian_approx
-        self.nll = None
+        self.y_fit_lst = []
+        self.y_val_lst = []
 
-        # self.pi = self.to_tensor(np.pi)
+        self.fwd_model_lst = []
+        self.noise_model_lst = []
+        self.noise_model_str_lst = []
 
-        # TODO reconsider how to handle scaling due to thinning
-        # this is not robust for cases where thinning may not be
-        # exactly 50:50
-        # set thin_factor to 1.0 and scale shot counts appropriately in the mpd_model?
-
-        # # model adjustment for poisson thinning
-        # self.thin_factor = 0.5
-        
-        # self.fwd_model_lst
-        # self.y_obs_lst
-        # self.set_estimate_lst(estimate_lst)
-        
     def to_tensor(self,arr:np.ndarray):
         return torch.tensor(arr,device=self.device,dtype=self.dtype)
     
@@ -822,159 +807,153 @@ class multiSpiral_autograd:
     def set_fwd_model_lst(self, fwd_model_lst:List[Callable]):
         self.fwd_model_lst = fwd_model_lst
 
-    def set_noise_model(self,noise_model:str):
+    def set_y_fit_lst(self,y_fit_lst:List[Dict[str,np.ndarray]]):
         """
-        set the noise model
-        
-        noise_model:str
-            string identifying the noise model
-            accepts: 'poisson', 'gaussian', 'gaussian_approx'
+        Create lists of observation dictionaries are required by
+        the noise model employed in this instance.
+        Converts all np.ndarrays into torch tensors
         """
 
-        if noise_model.lower() == 'poisson':
-            self.noise_model = noise_model.lower()
-            self.nll = self.pois_nll
-            self.output("Using Poisson Noise Model")
-        elif noise_model.lower() == 'deadtime':
-            self.noise_model = noise_model.lower()
-            self.nll = self.deadtime_nll
-            self.output("Using Deadtime Noise Model")
-        elif noise_model.lower() == 'gaussian':
-            self.noise_model = noise_model.lower()
-            self.nll = self.gaus_nll
-            self.output("Using Gaussian Noise Model")
-        elif noise_model.lower() == 'gaussian_approx':
-            self.noise_model = noise_model.lower()
-            self.nll = self.gaus_approx_nll
-            self.output("Using Gaussian Approximation Noise Model")
+        self.y_fit_lst = []
+        for y_fit in y_fit_lst:
+            self.append_y_fit_lst(y_fit)
+
+    def set_y_val_lst(self,y_val_lst:List[Dict[str,np.ndarray]]):
+        """
+        Create lists of observation dictionaries are required by
+        the noise model employed in this instance.
+        Converts all np.ndarrays into torch tensors
+        """
+
+        self.y_val_lst = []
+        for y_val in y_val_lst:
+            self.append_y_val_lst(y_val)
+
+    def append_y_fit_lst(self,y_dct:Dict[str,np.ndarray]):
+        """
+        Add an observation to the fit data list
+        """
+        new_dct = {}
+        for var in y_dct:
+            new_dct[var] = self.to_tensor(y_dct[var])
+        self.y_fit_lst.append(new_dct)
+
+    def append_y_val_lst(self,y_dct:Dict[str,np.ndarray]):
+        """
+        Add an observation to the fit data list
+        """
+        new_dct = {}
+        for var in y_dct:
+            new_dct[var] = self.to_tensor(y_dct[var])
+        self.y_val_lst.append(new_dct)
+
+    def set_noise_model(self,noise_model):
+        """
+        set the noise model to be employed
+        """
+        self.noise_model_lst = []
+        # TODO this test is intended to determine if noise_model is a tuple, list or array
+        # or just a single string instance, but it won't work because strings are also
+        # iterable.  Need to fix the test.
+        # for now, always pass in a strict definition of the noise model for each channel
+        if hasattr(noise_model,"__iter__"):
+            for noise_model_str in noise_model:
+                self.noise_model_lst.append(loss.noise_model_dct[noise_model_str.lower()]['function'])
+                self.noise_model_str_lst.append(noise_model_str.lower())
         else:
-            self.output("Noise model, "+noise_model+ ", is not a valid option")
-    
-    def set_y_obs_lst(self,y_obs_lst:List[np.ndarray]):
+            noise_model_str = noise_model
+            self.noise_model_lst = np.maximum(len(self.y_fit_lst),len(self.fwd_model_lst))*[loss.noise_model_dct[noise_model_str.lower()]['function']]
+            self.noise_model_str_lst = np.maximum(len(self.y_fit_lst),len(self.fwd_model_lst))*[noise_model_str.lower()]
+
+
+    def check_noise_model_inputs(self):
         """
-        Create lists of observations
-        split them into fit and validation sets
+        performs a check to confirm that the arguments in the
+        forward model and observations align with the noise model
+        Also checks that the number of channels are aligned across 
+        all of the definitions.
         """
+        err_str = ""
+        correct = True
+        # check the lengths of all the inputs to make sure they have the right number of channels
+
+        if len(self.noise_model_lst) != len(self.noise_model_str_lst):
+            err_str+=f"self.noise_model_lst has length {len(self.noise_model_lst)} and self.noise_model_str_lst has length {len(self.noise_model_str_lst)}\n"
+            correct = False
         
-        # TODO update to work with more than Poisson noise model
-        # this isn't generally used in the temperature processing
-        # routine.  For that we use load_y_obs()
+        if len(self.noise_model_lst) != len(self.fwd_model_lst):
+            err_str+=f"self.noise_model_lst has length {len(self.noise_model_lst)} and self.fwd_model_lst has length {len(self.fwd_model_lst)}\n"
+            correct = False
 
-        self.y_obs_lst = []
-        self.y_fit_lst = []
-        self.y_val_lst = []
+        if len(self.noise_model_lst) != len(self.y_fit_lst):
+            err_str+=f"self.noise_model_lst has length {len(self.noise_model_lst)} and self.y_fit_lst has length {len(self.y_fit_lst)}\n"
+            correct = False
 
-        self.y_fit_act_lst = []
-        self.y_val_act_lst = []
-        for y_obs in y_obs_lst:
-            self.y_obs_lst.append(self.to_tensor(y_obs))
-            y_thin_lst = poisson_thin(y_obs,n=2)
-            self.y_fit_lst.append(self.to_tensor(y_thin_lst[0]))
-            self.y_val_lst.append(self.to_tensor(y_thin_lst[1]))
-            
-        # if y_act_lst is not None:
-        
-        self.thin_factor = 0.5
+        if len(self.noise_model_lst) != len(self.y_val_lst):
+            err_str+=f"self.noise_model_lst has length {len(self.noise_model_lst)} and self.y_val_lst has length {len(self.y_val_lst)}\n"
+            correct = False
 
-        if self.chan_weight_lst is None:
-            self.chan_weight_lst = [1.0]*len(self.y_obs_lst)
-            
-    def load_y_obs(self,load_ds:xr.Dataset,channel_lst:List[str],rethin=False):
-        """
-        Load the observation
-        data from an xarray dataset
-        
-        rethin: bool
-            create a new thinned version of fit and validation data
-            defaults to False (using the thinned data as defined in
-            the input dataset).  This is usually just for bootstrap
-            uncertainty analysis.
-        """
-        self.y_obs_lst = []
-        self.y_fit_lst = []
-        self.y_val_lst = []
+        # if the list lengths are correct, move on to checking the dictonary inputs
+        if correct:
+            for idx,noise_model in enumerate(self.noise_model_str_lst):
+                obs_inputs = loss.noise_model_dct[noise_model]['noise_model_inputs']
+                opt_inputs = loss.noise_model_dct[noise_model]['fixed_optional']
 
-        self.y_fit_act_lst = []
-        self.y_val_act_lst = []
+                # check expected observation inputs.  if anything is missing it will result in a
+                # correct=False being returned.
+                for obs in obs_inputs:
+                    if obs not in self.y_fit_lst[idx].keys():
+                        correct = False
+                        err_str+=f"fit data is missing a dictionary entry for {obs} in channel {idx}\n"
+                    if obs not in self.y_val_lst[idx].keys():
+                        correct = False
+                        err_str+=f"validation data is missing a dictionary entry for {obs} in channel {idx}\n"
+                
+                # check optional inputs.  will not result in a failure if entries are missing, but they will be
+                # reported
+                for obs in opt_inputs:
+                    if obs not in self.y_fit_lst[idx].keys():
+                        err_str+=f"fit data is does not have a dictionary entry for optional input {obs} in channel {idx}\n"
+                    if obs not in self.y_val_lst[idx].keys():
+                        err_str+=f"validation data is does not have a dictionary entry for optional input {obs} in channel {idx}\n"
 
-        for ch_name in channel_lst:
-            self.y_obs_lst.append(self.to_tensor(load_ds[ch_name+"_raw"].values))
-            if rethin:
-                y_thin_lst = poisson_thin(load_ds[ch_name+"_raw"].values,n=load_ds.attrs.get('thin_count',2))
-                self.y_fit_lst.append(self.to_tensor(y_thin_lst[0]))
-                self.y_val_lst.append(self.to_tensor(y_thin_lst[1]))
-            else:
-                self.y_fit_lst.append(self.to_tensor(load_ds[ch_name+"_thin0"].values))
-                self.y_val_lst.append(self.to_tensor(load_ds[ch_name+"_thin1"].values))
 
-                if self.noise_model == 'deadtime':
-                    self.y_fit_act_lst.append(self.to_tensor(load_ds[ch_name+"_ActiveTime_thin0"].values))
-                    self.y_val_act_lst.append(self.to_tensor(load_ds[ch_name+"_ActiveTime_thin1"].values))
-                else:
-                    self.y_fit_act_lst.append(1.0)
-                    self.y_val_act_lst.append(1.0)
-
-        self.thin_factor = 1.0/load_ds.attrs.get('thin_count',2.0)
-        # if self.noise_model != 'deadtime':
-        #     self.thin_factor = 1.0/load_ds.attrs.get('thin_count',2.0)
-        # else:
-        #     self.thin_factor = 1.0
-
-        if self.chan_weight_lst is None:
-            self.chan_weight_lst = [1.0]*len(self.y_obs_lst)
+        return correct, err_str
 
     def set_channel_weights(self,channel_weights:List[float]):
-        self.chan_weight_lst = []
-        for chan_weight in channel_weights:
-            self.chan_weight_lst.append(chan_weight)
+        for idx,_ in enumerate(self.y_fit_lst):
+            self.y_fit_lst[idx]['channel_weight'] = channel_weights[idx]
+            self.y_val_lst[idx]['channel_weight'] = channel_weights[idx]
 
     def set_channel_masks(self,channel_masks:List[np.ndarray]):
-        self.channel_mask_lst = []
-        for ch_mask in channel_masks:
-            self.channel_mask_lst.append(torch.tensor(ch_mask,device=self.device, dtype=self.dtype))
+        for idx,_ in enumerate(self.y_fit_lst):
+            self.y_fit_lst[idx]['channel_mask'] = self.to_tensor(channel_masks[idx])
+            self.y_val_lst[idx]['channel_mask'] = self.to_tensor(channel_masks[idx])
 
-    def save_y_obs(self,filename:str):
+    def create_y_ds(self)->xr.Dataset:
         """
-        save the observation data to a netcdf file
+        creates a dataset of the observations (fit and validation)
+        and returns that dataset
         """
         ds = xr.Dataset({},attrs={
-            'data_channel_count':len(self.y_obs_lst),
+            'data_channel_count':len(self.y_fit_lst),
                     })
 
-        for idx_y,y in enumerate(self.y_obs_lst):
-            ds[f"y_obs_{idx_y}"] = xr.DataArray(y.cpu().numpy(),["time","range"])
-            ds[f"y_fit_{idx_y}"] = xr.DataArray(self.y_fit_lst[idx_y].cpu().numpy(),["time","range"])
-            ds[f"y_val_{idx_y}"] = xr.DataArray(self.y_val_lst[idx_y].cpu().numpy(),["time","range"])
-            if self.noise_model == "deadtime":
-                ds[f"y_fit_act_{idx_y}"] = xr.DataArray(self.y_fit_act_lst[idx_y].cpu().numpy(),["time","range"])
-                ds[f"y_val_act_{idx_y}"] = xr.DataArray(self.y_val_act_lst[idx_y].cpu().numpy(),["time","range"])
+        for idx_y,y_dct in enumerate(self.y_fit_lst):
+            for y_obs in y_dct:
+                ds[f"y_fit_{idx_y}_{y_obs}"] = xr.DataArray(self.y_fit_lst[idx_y][y_obs].cpu().numpy(),["time","range"])
+                ds[f"y_val_{idx_y}_{y_obs}"] = xr.DataArray(self.y_val_lst[idx_y][y_obs].cpu().numpy(),["time","range"])
 
-
-    # TODO
-    # def save_data(self,filename:str):
-    #     """
-    #     Save the data to a pickle file
-    #     """
-    #     # import pickle
-    #     # with open(filename, 'wb') as f:
-    #     #     pickle.dump(self, f)
-
-    #     import xarray as xr
-
-    #     ds = xr.Dataset({},attrs={
-    #         'data_channel_count':len(self.y_obs_lst),
-    #                 })
-
-    #     for idx_y,y in enumerate(self.y_obs_lst):
-    #         ds[f"y_obs_{idx_y}"] = xr.DataArray(y.cpu().numpy(),["time","range"])
-    #         ds[f"y_fit_{idx_y}"] = xr.DataArray(self.y_fit_lst[idx_y].cpu().numpy(),["time","range"])
-    #         ds[f"y_val_{idx_y}"] = xr.DataArray(self.y_val_lst[idx_y].cpu().numpy(),["time","range"])
-
-    #     # Save solutions
-
-    #     # Save regularizer values
-
-    #     # Save validation NLL
+        return ds
+    
+    def save_y_obs(self,filename:str):
+        """
+        save the all the observation data in fit and validation lists
+        to a netcdf file
+        """
+        ds = self.create_y_ds()
+        
+        ds.to_netcdf(filename)
         
 
     def set_estimate_lst(self,estimate_lst:List[str]):
@@ -1146,12 +1125,12 @@ class multiSpiral_autograd:
         assert len(self.fwd_model_lst) > 0
 
         for var in self.subprob_dct:
-            self.subprob_dct[var].load_fit_parameters(self.x, self.y_fit_lst, self.fwd_model_lst,var, model_scale=self.thin_factor)
-            if self.channel_mask_lst is not None:
-                self.subprob_dct[var].set_channel_masks(self.channel_mask_lst)
+            self.subprob_dct[var].load_fit_parameters(self.x, self.y_fit_lst, self.fwd_model_lst, var)
+            # if self.channel_mask_lst is not None:
+            #     self.subprob_dct[var].set_channel_masks(self.channel_mask_lst)
             self.subprob_dct[var].set_alpha(self.alpha0.get(var,1.0))
-            if self.chan_weight_lst is not None:
-                self.subprob_dct[var].set_channel_weights(self.chan_weight_lst)
+            # if self.chan_weight_lst is not None:
+            #     self.subprob_dct[var].set_channel_weights(self.chan_weight_lst)
 
     def initialize(self):
         """
@@ -1168,14 +1147,15 @@ class multiSpiral_autograd:
         for optimization
         """
         for var in self.subprob_dct:
-            if self.noise_model == 'poisson':
-                self.subprob_dct[var].set_loss_poisson()
-            elif self.noise_model == 'deadtime':
-                self.subprob_dct[var].set_loss_deadtime(self.y_fit_act_lst)
-            elif self.noise_model == 'gaussian':
-                self.subprob_dct[var].set_loss_gaus()
-            elif self.noise_model == 'gaussian_approx':
-                self.subprob_dct[var].set_loss_gaus_approx()
+            self.subprob_dct[var].set_loss_fn_lst(self.noise_model_lst)
+            # if self.noise_model == 'poisson':
+            #     self.subprob_dct[var].set_loss_poisson()
+            # elif self.noise_model == 'deadtime':
+            #     self.subprob_dct[var].set_loss_deadtime(self.y_fit_act_lst)
+            # elif self.noise_model == 'gaussian':
+            #     self.subprob_dct[var].set_loss_gaus()
+            # elif self.noise_model == 'gaussian_approx':
+            #     self.subprob_dct[var].set_loss_gaus_approx()
             self.subprob_dct[var].set_fista(self.fista_ver_str,order=self.tv_order[var])
 
     def get_x(self)->Dict[str,np.ndarray]:
@@ -1223,7 +1203,7 @@ class multiSpiral_autograd:
             for var in self.estimate_lst:
                 self.output("solving for "+var)
                 self.subprob_dct[var].reset_iterations()
-                self.subprob_dct[var].set_fit_param(self.x,model_scale=0.5)
+                self.subprob_dct[var].set_fit_param(self.x)
                 if len(self.estimate_lst) > 1:
                     # reset alpha if there are multiple variables in the
                     # optimization routine
@@ -1276,14 +1256,11 @@ class multiSpiral_autograd:
         Calculate the Poisson NLL against
         the fit data
         """
-        # TODO update so model call includes fit variable
+
         loss = 0.0
         for idx, model in enumerate(self.fwd_model_lst):
-            if self.channel_mask_lst is not None:
-                loss_mask = self.channel_mask_lst[idx]
-            else:
-                loss_mask = None
-            loss += self.chan_weight_lst[idx]*self.nll(model(**self.x),self.y_fit_lst[idx],self.y_fit_act_lst[idx],mask=loss_mask).item()
+            y_est = model(**self.x)
+            loss += self.noise_model_lst[idx](**y_est,**self.y_fit_lst[idx]).item()
         return loss
 
     def valid_loss(self)->float:
@@ -1291,40 +1268,9 @@ class multiSpiral_autograd:
         Calculate the Poisson NLL against
         the validation data
         """
-        # TODO update so model call includes fit variable
+
         loss = 0.0
         for idx, model in enumerate(self.fwd_model_lst):
-            if self.channel_mask_lst is not None:
-                loss_mask = self.channel_mask_lst[idx]
-            else:
-                loss_mask = None
-            loss += self.chan_weight_lst[idx]*self.nll(model(**self.x),self.y_val_lst[idx],self.y_val_act_lst[idx],mask=loss_mask).item()
+            y_est = model(**self.x)
+            loss += self.noise_model_lst[idx](**y_est,**self.y_val_lst[idx]).item()
         return loss
-
-    def pois_nll(self,fwd_model,phot_counts,act_time,mask=None)->torch.tensor:
-        self.output("Poisson Loss Call")
-        if mask is None:
-            return torch.sum(self.thin_factor*fwd_model-phot_counts*torch.log(self.thin_factor*fwd_model))
-        else:
-            return torch.sum(mask*(self.thin_factor*fwd_model-phot_counts*torch.log(self.thin_factor*fwd_model)))
-
-    def deadtime_nll(self,fwd_model,phot_counts,act_time,mask=None)->torch.tensor:
-        self.output("Deadtime Loss Call")
-        if mask is None:
-            return torch.sum(act_time*self.thin_factor*fwd_model-phot_counts*torch.log(self.thin_factor*fwd_model))
-        else:
-            return torch.sum(mask*(act_time*self.thin_factor*fwd_model-phot_counts*torch.log(self.thin_factor*fwd_model)))
-
-    def gaus_nll(self,fwd_model,phot_counts,act_time,mask=None)->torch.tensor:
-        self.output("Gaussian Loss Call")
-        if mask is None:
-            return torch.sum(0.5*torch.log(2*self.thin_factor*fwd_model*self.pi)+(self.thin_factor*fwd_model-phot_counts)**2/(2*self.thin_factorfwd_model))
-        else:
-            return torch.sum(mask*(0.5*torch.log(2*self.thin_factor*fwd_model*self.pi)+(self.thin_factor*fwd_model-phot_counts)**2/(2*self.thin_factor*fwd_model)))
-    
-    def gaus_approx_nll(self,fwd_model,phot_counts,act_time,mask=None)->torch.tensor:
-        self.output("Gaussian Approx Loss Call")
-        if mask is None:
-            return torch.sum((self.thin_factor*fwd_model-phot_counts)**2)
-        else:
-            return torch.sum(mask*(self.thin_factor*fwd_model-phot_counts)**2)
