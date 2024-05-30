@@ -1,6 +1,33 @@
 # SpiralTorch
 Library using PyTorch to implement Spiral-TAP, Sparsa and FISTA for total variation denoising
 
+# Python Environment
+Installing packages using conda can be accomplished with an anaconda installation as follows
+
+Create a new python environment
+Create the python environment (in this exampled named `ptv-casper-cuda`) with python version aligning with the pytorch version selected above:
+```
+conda create -n ptv-casper-cuda python=3.12
+conda activate ptv-casper-cuda
+```
+Install base packages
+```
+conda install matplotlib numpy pyyaml scipy xarray ipykernel netcdf4 jupyter
+conda install scikit-learn -c conda-forge
+conda install ninja  # only needed for using the custom cuda kernel
+```
+If you are only installing `PyTorch` for CPU, the installation script
+```
+conda install pytorch -c pytorch  # this was tested with 2.3.0, but there is no reason to think other versions won't work
+```
+
+If you are planning to use a GPU, you will need to ensure that the CUDA compiler version is aligned with the install request.  E.g.
+```
+conda install pytorch=2.3.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+```
+
+
+
 # Install on Casper
 Part of the challenge in making an environment that leverages the GPUs is ensuring that there is alignment between the CUDA compiler versions and the CUDA compiler used by PyTorch.  Here are the steps to install a GPU enabled environment through the example of Casper.
 
@@ -38,7 +65,7 @@ export CONDA_OVERRIDE_CUDA="11.8"
 ```
 Install libraries
 ```
-conda install matplotlib numpy pyyaml scipy xarray ipykernel # removed netcdf3
+conda install matplotlib numpy pyyaml scipy xarray ipykernel netcdf4
 conda install scikit-learn -c conda-forge
 conda install ninja
 conda install lmod  # this is for setting the environment on JupyterHub
