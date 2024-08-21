@@ -126,7 +126,6 @@ torch::Tensor fista_launch(
     torch::Tensor ub
   )
 {
-
     constexpr int num_iter = 50;
 
     int Y = b.size(0);
