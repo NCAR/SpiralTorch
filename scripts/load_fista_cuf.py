@@ -27,6 +27,7 @@ source activate ptv-torch-cuda
 import os,sys
 import yaml
 
+
 # load file path information from the home directory
 file_path_yml = os.path.join(os.environ["HOME"], ".ncar_config_derecho.yaml")
 path_data = {}
@@ -91,14 +92,16 @@ alpha_arr+= 10
 
 x0 = {'backscatter':torch.tensor(alpha_arr,dtype=dtype,device=device)}
 
-alpha = 1e10
-x_lb = torch.zeros_like(x0['backscatter'])-10
-x_ub = torch.zeros_like(x0['backscatter'])+10
+alpha = 1e1
+x_lb = torch.zeros_like(x0['backscatter'])-1e10
+x_ub = torch.zeros_like(x0['backscatter'])+1e10
 cu_fista = SpiralTorch.cuda.st_fista_cuf.solve_FISTA_subproblem_kernel
 
 res_cu = cu_fista(x0['backscatter'],torch.tensor(1e-1/alpha,device=device,dtype=dtype),x_lb,x_ub)
 
 # non-cuda version of fista
+x0 = {'backscatter':torch.tensor(alpha_arr,dtype=dtype,device=device)}
+
 jit_fista = torch.jit.trace(fista.solve_FISTA_subproblem_jit,(x0['backscatter'],torch.tensor(1e-1/alpha,device=device,dtype=dtype),
                                                     x_lb,x_ub))
 res_jit = jit_fista(x0['backscatter'],torch.tensor(1e-1/alpha,device=device,dtype=dtype),x_lb,x_ub)
