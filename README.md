@@ -72,7 +72,7 @@ which tells us we need cuda 12.1 (really any 12.x version) and we should install
 
 Create the python environment (in this exampled named `ptv-casper-cuda12`) with python version aligning with the pytorch version selected above:
 ```
-conda create -n ptv-casper-cud12 python=3.12
+conda create -n ptv-casper-cuda12 python=3.12
 conda activate ptv-casper-cuda12
 ```
 
