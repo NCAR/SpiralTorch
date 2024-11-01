@@ -750,7 +750,7 @@ class sparsa_torch_autograd:
 
 
 class multiSpiral_autograd:
-    def __init__(self,device,dtype,max_iterations=100,min_iterations=0,spiral_eps=1e-5,timeout=21600):
+    def __init__(self,device,dtype,max_iterations=100,min_iterations=0,spiral_eps=1e-5,timeout=21600,valid_mean=10,early_stopping=True):
         self.device = device
         self.dtype = dtype
 
@@ -787,6 +787,9 @@ class multiSpiral_autograd:
         self.fwd_model_lst = []
         self.noise_model_lst = []
         self.noise_model_str_lst = []
+
+        self.valid_mean = valid_mean  # number of iterations to average over to determine if validation is increasing
+        self.early_stopping = early_stopping  # enable early stopping when validation loss starts increasing
 
     def to_tensor(self,arr:np.ndarray):
         return torch.tensor(arr,device=self.device,dtype=self.dtype)
@@ -1194,6 +1197,7 @@ class multiSpiral_autograd:
             self.initialize_subproblems()
             self.step_size_lst = []
             self.loss_lst = []
+            self.valid_loss_lst = []
 
         for idx in range(self.max_iterations):
             step_size = 0.0
@@ -1234,10 +1238,16 @@ class multiSpiral_autograd:
             
             self.step_size_lst.append(step_size)
             self.loss_lst.append(self.fit_loss())
+            self.valid_loss_lst.append(self.valid_loss())
             
             if step_size < self.spiral_eps and idx > self.min_iterations:
                 term_str = f"Optimization Successful after {idx} iterations"
                 break
+
+            if idx > self.min_iterations and idx > self.valid_mean and self.early_stopping:
+                if np.mean(np.diff(self.valid_loss_lst[-self.valid_mean:])) > 0:
+                    term_str = f"Average validation loss increased over last {self.valid_mean} iterations"
+                    break
             
             if time.time() - self.start_time > self.timeout:
                 term_str = f"Exceeded maximum SPIRAL time of {self.timeout} seconds"
