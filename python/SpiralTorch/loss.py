@@ -91,6 +91,40 @@ def deadtime_loss_fn(
 
     return channel_weight*(channel_mask*(active_time*y_mean_est-counts*torch.log(y_mean_est))).sum()
 
+def deadtime_bg_loss_fn(
+        y_mean_est:torch.tensor=None,
+        counts:torch.tensor=None,
+        active_time:torch.tensor=None,
+        bg:torch.tensor=None,
+        channel_mask:torch.tensor=1.0,
+        channel_weight:torch.tensor=1.0)->torch.tensor:
+    """
+    single channel deadtime loss for loss function definitions.
+    Any argument with default None needs to be provided 
+
+    y_mean_est:torch.tensor=None,
+        from forward model
+    
+    counts:torch.tensor=None,
+        from observations
+        Photon counts in each histogram bin
+    active_time:torch.tensor=None,
+        from observations
+        detector active_time for each histogram bin
+    bg:torch.tensor=None,
+        from observations, estimated background for
+        this set of observations
+        this is expected sum sum with the y_mean_est
+    channel_mask:torch.tensor=1.0,
+        from observations
+        pixel based masking or weighting
+    channel_weight:torch.tensor=1.0
+        from observations
+        total channel weighting  
+    """
+
+    return channel_weight*(channel_mask*(active_time*(y_mean_est+bg)-counts*torch.log(y_mean_est+bg))).sum()
+
 def gaus_fn(
         y_mean_est:torch.tensor=None,
         y_var_est:torch.tensor=None,
@@ -169,6 +203,13 @@ noise_model_dct = {
         'noise_optional':[],
         'fixed_optional':['channel_mask','channel_weight'],
         'function':deadtime_loss_fn,
+    },
+    'deadtime_bg':{
+        'forward_model_inputs':['y_mean_est'],
+        'noise_model_inputs':['counts','active_time','bg'],
+        'noise_optional':[],
+        'fixed_optional':['channel_mask','channel_weight'],
+        'function':deadtime_bg_loss_fn,
     },
     'gaussian':{
         'forward_model_inputs':['y_mean_est','y_var_est'],
