@@ -403,7 +403,7 @@ class sparsa_torch_autograd:
             # the forward model should return a dict of output terms\
             # to accomidate multi-parameter PDFs
             y_est = mod(x)  
-            loss += self.loss_fn_lst[idx](**y_est,**self.y_obs_dct_lst[idx])
+            loss += self.loss_fn_lst[idx](**y_est,**self.y_obs_dct_lst[idx]).sum()
         
         return loss
         
@@ -750,7 +750,13 @@ class sparsa_torch_autograd:
 
 
 class multiSpiral_autograd:
-    def __init__(self,device,dtype,max_iterations=100,min_iterations=0,spiral_eps=1e-5,timeout=21600,valid_mean=10,early_stopping=True):
+    def __init__(self,device,dtype,max_iterations=100,
+                 min_iterations=0,
+                 spiral_eps=1e-5,
+                 timeout=21600,
+                 valid_mean=10,
+                 early_stopping=True,
+                 nll_mask=False):
         self.device = device
         self.dtype = dtype
 
@@ -791,6 +797,10 @@ class multiSpiral_autograd:
         self.valid_mean = valid_mean  # number of iterations to average over to determine if validation is increasing
         self.early_stopping = early_stopping  # enable early stopping when validation loss starts increasing
 
+        # update the mask based on validation nll trend of patches
+        self.nll_mask = nll_mask
+        self.set_nll_patch_kernel(3,3)
+
     def to_tensor(self,arr:np.ndarray):
         return torch.tensor(arr,device=self.device,dtype=self.dtype)
     
@@ -806,6 +816,9 @@ class multiSpiral_autograd:
             print(f"{fista_str} is not a valid version of fista, you must choose one of the following:")
             print(self.valid_fista_ver.join(', '))
             print("using default version: "+self.fista_ver_str)
+
+    def set_nll_patch_kernel(self,t_dim,r_dim):
+        self.nll_kern = torch.ones(t_dim,r_dim,dtype=self.dtype,device=self.device)
     
     def set_fwd_model_lst(self, fwd_model_lst:List[Callable]):
         self.fwd_model_lst = fwd_model_lst
@@ -1244,6 +1257,22 @@ class multiSpiral_autograd:
                 term_str = f"Optimization Successful after {idx} iterations"
                 break
 
+            if self.nll_mask:
+                self.new_fit_nll_patch, self.new_vld_nll_patch = self.image_patch_loss()
+                if idx > 0:
+                    for ch_idx, ch_nll in enumerate(self.new_vld_nll_patch):
+                        self.nll_vld_delta = ch_nll - self.old_vld_nll_patch[ch_idx]
+                        self.nll_fit_delta = self.new_fit_nll_patch[ch_idx] - self.old_fit_nll_patch[ch_idx]
+                        # TODO update m ask in regions where delta > 0
+                        red_idx = torch.where((self.nll_vld_delta > 0) & (self.nll_fit_delta < 0))
+                        self.y_fit_lst[ch_idx]['channel_mask'][red_idx] *= 0.5
+                        self.y_val_lst[ch_idx]['channel_mask'][red_idx] *= 0.5
+                else:
+                    self.old_vld_nll_patch = self.new_vld_nll_patch
+                    self.old_fit_nll_patch = self.new_fit_nll_patch
+
+            # TODO how to handle nll_masks and early stopping where changes
+            # to the mask values can alter the validation scare
             if idx > self.min_iterations and idx > self.valid_mean and self.early_stopping:
                 if np.mean(np.diff(self.valid_loss_lst[-self.valid_mean:])) > 0:
                     term_str = f"Average validation loss increased over last {self.valid_mean} iterations"
@@ -1270,7 +1299,7 @@ class multiSpiral_autograd:
         loss = 0.0
         for idx, model in enumerate(self.fwd_model_lst):
             y_est = model(**self.x)
-            loss += self.noise_model_lst[idx](**y_est,**self.y_fit_lst[idx]).item()
+            loss += self.noise_model_lst[idx](**y_est,**self.y_fit_lst[idx]).sum().item()
         return loss
 
     def valid_loss(self)->float:
@@ -1282,5 +1311,31 @@ class multiSpiral_autograd:
         loss = 0.0
         for idx, model in enumerate(self.fwd_model_lst):
             y_est = model(**self.x)
-            loss += self.noise_model_lst[idx](**y_est,**self.y_val_lst[idx]).item()
+            loss += self.noise_model_lst[idx](**y_est,**self.y_val_lst[idx]).sum().item()
         return loss
+    
+    # TODO 
+    # calculate loss over patches
+    # update weights *= 0.5 when fit loss goes down but val loss goes up
+    def image_patch_loss(self)->float:
+        """
+        Calculate the NLL of image patches
+        the validation data
+        """
+
+        val_patch_lst = []
+        fit_patch_lst = []
+        for idx, model in enumerate(self.fwd_model_lst):
+            y_est = model(**self.x)
+            val_patch_loss = torch.nn.functional.conv2d(
+                self.noise_model_lst[idx](**y_est,**self.y_val_lst[idx])[None,None,...],
+                self.nll_kern[None,None,...],
+                padding=(self.nll_kern.shape[0]//2,self.nll_kern.shape[1]//2)).squeeze()
+            val_patch_lst.append(val_patch_loss)
+            
+            fit_patch_loss = torch.nn.functional.conv2d(
+                self.noise_model_lst[idx](**y_est,**self.y_fit_lst[idx])[None,None,...],
+                self.nll_kern[None,None,...],
+                padding=(self.nll_kern.shape[0]//2,self.nll_kern.shape[1]//2)).squeeze()
+            fit_patch_lst.append(fit_patch_loss)
+        return fit_patch_lst, val_patch_lst

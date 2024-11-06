@@ -60,7 +60,7 @@ def pois_loss_fn(
         total channel weighting
     
     """
-    return channel_weight*(channel_mask*(shot_count*y_mean_est-counts*torch.log(y_mean_est))).sum()
+    return channel_weight*(channel_mask*(shot_count*y_mean_est-counts*torch.log(y_mean_est)))
 
 def deadtime_loss_fn(
         y_mean_est:torch.tensor=None,
@@ -89,7 +89,7 @@ def deadtime_loss_fn(
         total channel weighting  
     """
 
-    return channel_weight*(channel_mask*(active_time*y_mean_est-counts*torch.log(y_mean_est))).sum()
+    return channel_weight*(channel_mask*(active_time*y_mean_est-counts*torch.log(y_mean_est)))
 
 def deadtime_bg_loss_fn(
         y_mean_est:torch.tensor=None,
@@ -123,7 +123,7 @@ def deadtime_bg_loss_fn(
         total channel weighting  
     """
 
-    return channel_weight*(channel_mask*(active_time*(y_mean_est+bg)-counts*torch.log(y_mean_est+bg))).sum()
+    return channel_weight*(channel_mask*(active_time*(y_mean_est+bg)-counts*torch.log(y_mean_est+bg)))
 
 def gaus_fn(
         y_mean_est:torch.tensor=None,
@@ -152,7 +152,7 @@ def gaus_fn(
         from observations
         total channel weighting 
     """ 
-    return channel_weight*(channel_mask*(0.5*torch.log(2.0*pi_const*y_var_est*shot_count**2)+(y_mean_est*shot_count-counts)**2/(2*y_var_est*shot_count**2))).sum()
+    return channel_weight*(channel_mask*(0.5*torch.log(2.0*pi_const*y_var_est*shot_count**2)+(y_mean_est*shot_count-counts)**2/(2*y_var_est*shot_count**2)))
     
 
 def gaus_mean_fn(
@@ -186,7 +186,7 @@ def gaus_mean_fn(
         total channel weighting 
     """ 
 
-    return channel_weight*(channel_mask*((y_mean_est*shot_count-counts)**2/(2*variance*shot_count**2))).sum()
+    return channel_weight*(channel_mask*((y_mean_est*shot_count-counts)**2/(2*variance*shot_count**2)))
 
 
 noise_model_dct = {
