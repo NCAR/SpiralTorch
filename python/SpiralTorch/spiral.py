@@ -750,13 +750,15 @@ class sparsa_torch_autograd:
 
 
 class multiSpiral_autograd:
-    def __init__(self,device,dtype,max_iterations=100,
-                 min_iterations=0,
-                 spiral_eps=1e-5,
-                 timeout=21600,
-                 valid_mean=10,
-                 early_stopping=True,
-                 nll_mask=False):
+    def __init__(self,device,dtype,
+                 max_iterations=100,# force termination after this many steps
+                 min_iterations=0,  # limit on number of steps that must be executed
+                 spiral_eps=1e-5,   # step size termination criteria
+                 timeout=21600,     # time in seconds before timing out the solver
+                 valid_mean=10,     # only used if early_stopping is enabled
+                 early_stopping=True, # stop if the validation loss is not going down
+                 nll_mask=False,    # mask regions where the validation loss is going up
+                 ):
         self.device = device
         self.dtype = dtype
 
