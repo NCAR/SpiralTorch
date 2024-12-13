@@ -62,6 +62,40 @@ def pois_loss_fn(
     """
     return channel_weight*(channel_mask*(shot_count*y_mean_est-counts*torch.log(y_mean_est)))
 
+def pois_bg_loss_fn(
+        y_mean_est:torch.tensor=None,
+        counts:torch.tensor=None,
+        bg:torch.tensor=None,
+        shot_count:torch.tensor=1.0,
+        channel_mask:torch.tensor=1.0,
+        channel_weight:torch.tensor=1.0)->torch.tensor:
+    """
+    single channel Poisson loss for loss function definitions.
+    Any argument with default None needs to be provided
+
+    y_mean_est:torch.tensor=None,
+        from forward model
+    counts:torch.tensor=None,
+        from observations
+        Photon counts in each histogram bin
+    bg:torch.tensor=None,
+        from observations, estimated background for
+        this set of observations
+        this is expected sum sum with the y_mean_est
+    shot_count:torch.tensor=None,
+        from observations
+        number of laser shots.  can also include 
+        bin accumulation time and other forward model scalars
+    channel_mask:torch.tensor=1.0,
+        from observations
+        pixel based masking or weighting
+    channel_weight:torch.tensor=1.0
+        from observations
+        total channel weighting
+    
+    """
+    return channel_weight*(channel_mask*(shot_count*(y_mean_est+bg)-counts*torch.log(y_mean_est+bg)))
+
 def deadtime_loss_fn(
         y_mean_est:torch.tensor=None,
         counts:torch.tensor=None,
@@ -196,6 +230,13 @@ noise_model_dct = {
         'noise_optional':['shot_count'],
         'fixed_optional':['channel_mask','channel_weight'],
         'function':pois_loss_fn,
+    },
+    'poisson_bg':{
+        'forward_model_inputs':['y_mean_est'],
+        'noise_model_inputs':['counts','bg'],
+        'noise_optional':['shot_count'],
+        'fixed_optional':['channel_mask','channel_weight'],
+        'function':pois_bg_loss_fn,
     },
     'deadtime':{
         'forward_model_inputs':['y_mean_est'],
