@@ -195,17 +195,6 @@ class sparsa_torch_autograd:
     def set_penalty_weight(self,tau:float):
         self.penalty_weight = torch.tensor(tau,device=self.device, dtype=self.dtype)
 
-    # TODO Remove
-    # def set_channel_weights(self,channel_weights:List[float]):
-    #     self.chan_weight_lst = []
-    #     for ch_weight in channel_weights:
-    #         self.chan_weight_lst.append(torch.tensor(ch_weight, device=self.device, dtype=self.dtype))
-
-    # TODO Remove
-    # def set_channel_masks(self,channel_masks:List[torch.tensor]):
-    #     self.channel_mask_lst = []  # set mask to default value
-    #     for ch_mask in channel_masks:
-    #         self.channel_mask_lst.append(ch_mask.type(self.dtype))
 
         
     def load_fit_parameters(self,x:Dict[str,torch.tensor],
@@ -272,34 +261,6 @@ class sparsa_torch_autograd:
         for fnc in fnc_lst:
             self.loss_fn_lst.append(fnc)
         
-    # def set_loss_poisson(self):
-    #     self.loss_fn = loss.pois_loss_fn # self.pois_loss_fn
-    #     # print("spiral loss function set to \'poisson\'")
-
-    # def set_loss_deadtime(self):
-    #     self.loss_fn = self.deadtime_loss_fn
-    #     # requires that the active time histograms for each channel
-    #     # are passed into the this function
-    #     # self.y_active_lst = []
-    #     # for y_act in y_active_lst:
-    #     #     self.y_active_lst.append(y_act.type(self.dtype))
-    #     # self.loss_fn = self.deadtime_loss_fn
-    #     # print("spiral loss function set to \'deadtime\'")
-
-    # # TODO:  How to handle multiple component noise models?
-    # #  e.g. Gaussian has both variance and mean estimates that
-    # #  fold into the loss function, not the forward model.
-    # def set_loss_gaus(self):
-    #     self.loss_fn = self.gaus_fn
-    #     # print("spiral loss function set to \'gaussian\'")
-
-    # def set_loss_gaus_approx(self):
-    #     self.loss_fn = self.gaus_approx_fn
-
-    #     # set estimated variance weighting
-    #     # for idx, y_obs in enumerate(self.y_obs_lst):
-    #     #     self.channel_mask_lst[idx]*=1.0/torch.maximum(1.0,y_obs)
-    #     # print("spiral loss function set to \'gaussian approx\'")
         
     def set_fista(self,fista_ver_str, order:int=1):
         """
@@ -407,124 +368,7 @@ class sparsa_torch_autograd:
         
         return loss
         
-    # def pois_loss_fn(self,y_mean_est:torch.tensor=None,
-    #                  counts:torch.tensor=None,
-    #                  shot_count:torch.tensor=1.0,
-    #                  channel_mask:torch.tensor=1.0,
-    #                  channel_weight:torch.tensor=1.0)->torch.tensor:
-    #     """
-    #     single channel Poisson loss for loss function definitions.
-    #     Any argument with default None needs to be provided
-
-    #     y_mean_est:torch.tensor=None,
-    #         from forward model
-    #     counts:torch.tensor=None,
-    #         from observations
-    #         Photon counts in each histogram bin
-    #     shot_count:torch.tensor=None,
-    #         from observations
-    #         number of laser shots.  can also include 
-    #         bin accumulation time and other forward model scalars
-    #     channel_mask:torch.tensor=1.0,
-    #         from observations
-    #         pixel based masking or weighting
-    #     channel_weight:torch.tensor=1.0
-    #         from observations
-    #         total channel weighting
-        
-    #     """
-    #     return channel_weight*(channel_mask*(shot_count*y_mean_est-counts*torch.log(y_mean_est))).sum()
     
-    # def deadtime_loss_fn(self,y_mean_est:torch.tensor=None,
-    #                      counts:torch.tensor=None,
-    #                      active_time:torch.tensor=None,
-    #                      channel_mask:torch.tensor=1.0,
-    #                      channel_weight:torch.tensor=1.0)->torch.tensor:
-    #     """
-    #     single channel deadtime loss for loss function definitions.
-    #     Any argument with default None needs to be provided 
-
-    #     y_mean_est:torch.tensor=None,
-    #         from forward model
-        
-    #     counts:torch.tensor=None,
-    #         from observations
-    #         Photon counts in each histogram bin
-    #     active_time:torch.tensor=None,
-    #         from observations
-    #         detector active_time for each histogram bin
-    #     channel_mask:torch.tensor=1.0,
-    #         from observations
-    #         pixel based masking or weighting
-    #     channel_weight:torch.tensor=1.0
-    #         from observations
-    #         total channel weighting  
-    #     """
-
-    #     return channel_weight*(channel_mask*(active_time*y_mean_est-counts*torch.log(y_mean_est))).sum()
-
-    # def gaus_fn(self,
-    #             y_mean_est:torch.tensor=None,
-    #             y_var_est:torch.tensor=None,
-    #             counts:torch.tensor=None,
-    #             shot_count:torch.tensor=1.0,
-    #             channel_mask:torch.tensor=1.0,
-    #             channel_weight:torch.tensor=1.0)->torch.tensor:
-    #     """
-    #     y_mean_est:torch.tensor=None,
-    #         from forward model
-    #     y_var_est:torch.tensor=None,
-    #         from forward model
-        
-    #     counts:torch.tensor=None,
-    #         from observations
-    #         Photon counts in each histogram bin
-    #     shot_count:torch.tensor=None,
-    #         from observations
-    #         number of laser shots.  can also include 
-    #         bin accumulation time and other forward model scalars
-    #     channel_mask:torch.tensor=1.0,
-    #         from observations
-    #         pixel based masking or weighting
-    #     channel_weight:torch.tensor=1.0
-    #         from observations
-    #         total channel weighting 
-    #     """ 
-    #     return channel_weight*(channel_mask*(0.5*torch.log(2.0*self.pi*y_var_est*shot_count**2)+(y_mean_est*shot_count-counts)**2/(2*y_var_est*shot_count**2))).sum()
-        
-
-    # def gaus_mean_fn(self,
-    #                    y_mean_est:torch.tensor=None,
-    #                    counts:torch.tensor=None,
-    #                    shot_count:torch.tensor=1.0,
-    #                    variance:torch.tensor=None,
-    #                    channel_mask:torch.tensor=1.0,
-    #                    channel_weight:torch.tensor=1.0)->torch.tensor:
-    #     """
-    #     # Gaussian noise with known variance
-
-    #     y_mean_est:torch.tensor=None,
-    #         from forward model
-        
-    #     counts:torch.tensor=None,
-    #         from observations
-    #         Photon counts in each histogram bin
-    #     shot_count:torch.tensor=None,
-    #         from observations
-    #         number of laser shots.  can also include 
-    #         bin accumulation time and other forward model scalars
-    #     variance:torch.tensor=None,
-    #         from observations
-    #         known variance of the observed signal
-    #     channel_mask:torch.tensor=1.0,
-    #         from observations
-    #         pixel based masking or weighting
-    #     channel_weight:torch.tensor=1.0
-    #         from observations
-    #         total channel weighting 
-    #     """ 
-
-    #     return channel_weight*(channel_mask*((y_mean_est*shot_count-counts)**2/(2*variance*shot_count**2))).sum()
 
     def pen_fn_1stOrder(self,x):
         tv = torch.sum(torch.abs(torch.diff(x,dim=0))) + torch.sum(torch.abs(torch.diff(x,dim=1)))
