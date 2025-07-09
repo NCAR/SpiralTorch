@@ -8,24 +8,23 @@ $\tilde{x} = argmin L[y,f(x)] + \lambda ||x||_{TV}$
 where $L(y,\alpha)$ is the statistical model for the noisy observations given parameterization $\alpha$, $||x||_{TV}$ is the total variation of $x$ and $\lambda$ is a real scalar that sets the total variation regularization.
 
 The optimizer implementation here is based on the following published works:
-```
-Oh, A. K., Harmany, Z. T. & Willett, R. M. Logarithmic total variation regularization for cross-validation in photon-limited imaging. In 2013 IEEE International Conference on Image Processing, 484–488 (2013).
 
-Harmany, Z. T., Marcia, R. F. & Willett, R. M. This is spiral-tap: Sparse Poisson intensity reconstruction algorithms-theory and practice. IEEE Trans. Image Process. 21, 1084–1096. DOI: 10.1109/TIP.2011.2168410 (2012).
+1.  Oh, A. K., Harmany, Z. T. & Willett, R. M. Logarithmic total variation regularization for cross-validation in photon-limited imaging. In 2013 IEEE International Conference on Image Processing, 484–488 (2013).
 
-Beck, A. & Teboulle, M. Fast gradient-based algorithms for constrained total variation image denoising and deblurring problems. IEEE Trans. Image Process. 18, 2419–2434. DOI: 10.1109/TIP.2009.2028250 (2009).
+2. Harmany, Z. T., Marcia, R. F. & Willett, R. M. This is spiral-tap: Sparse Poisson intensity reconstruction algorithms-theory and practice. IEEE Trans. Image Process. 21, 1084–1096. DOI: 10.1109/TIP.2011.2168410 (2012).
 
-Wright, S. J. & Nowak, R. D. Sparse Reconstruction by Separable Approximation. IEEE Trans. Signal Processing, 57, 2479-2493 DOI: 10.1109/TSP.2009.2016892 (2009).
-```
+3. Beck, A. & Teboulle, M. Fast gradient-based algorithms for constrained total variation image denoising and deblurring problems. IEEE Trans. Image Process. 18, 2419–2434. DOI: 10.1109/TIP.2009.2028250 (2009).
+
+4. Wright, S. J. & Nowak, R. D. Sparse Reconstruction by Separable Approximation. IEEE Trans. Signal Processing, 57, 2479-2493 DOI: 10.1109/TSP.2009.2016892 (2009).
 
 Work making use of software in this repository should cite one or more of the following works:
-```
-M. Hayman, R. A. Stillwell, A. Karboski, S. M. Spuler, "Signal processing to denoise and retrieve water vapor from multi-pulse-length lidar data", In Preparation.
 
-M. Hayman, R. A. Stillwell, A. Karboski, W. J. Marais, S. M. Spuler, "Global Estimation of Range Resolved Thermodynamic Profiles from MicroPulse Differential Absorption Lidar," Opt Express, 32(8), 14442-14460 (2024).
+1. M. Hayman, R. A. Stillwell, A. Karboski, S. M. Spuler, "Signal processing to denoise and retrieve water vapor from multi-pulse-length lidar data", In Preparation.
 
-M. Hayman, R. A. Stillwell, J. Carnes, G. J. Kirchhoff, J. P. Thayer, S. M. Spuler, "2D Signal Estimation for Sparse Distributed Target Photon Counting Data," Sci Rep, 14, 10325, DOI: 10.1038/s41598-024-60464-1 (2024).
-```
+2. M. Hayman, R. A. Stillwell, A. Karboski, W. J. Marais, S. M. Spuler, "Global Estimation of Range Resolved Thermodynamic Profiles from MicroPulse Differential Absorption Lidar," Opt Express, 32(8), 14442-14460 (2024).
+
+3. M. Hayman, R. A. Stillwell, J. Carnes, G. J. Kirchhoff, J. P. Thayer, S. M. Spuler, "2D Signal Estimation for Sparse Distributed Target Photon Counting Data," Sci Rep, 14, 10325, DOI: 10.1038/s41598-024-60464-1 (2024).
+
 
 # Examples using SpiralTorch
 
