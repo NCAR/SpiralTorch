@@ -1142,10 +1142,11 @@ class multiSpiral_autograd:
         the fit data
         """
 
-        loss = 0.0
-        for idx, model in enumerate(self.fwd_model_lst):
-            y_est = model(**self.x)
-            loss += self.noise_model_lst[idx](**y_est,**self.y_fit_lst[idx]).sum().item()
+        with torch.no_grad():
+            loss = 0.0
+            for idx, model in enumerate(self.fwd_model_lst):
+                y_est = model(**self.x)
+                loss += self.noise_model_lst[idx](**y_est,**self.y_fit_lst[idx]).sum().item()
         return loss
 
     def valid_loss(self)->float:
@@ -1153,11 +1154,11 @@ class multiSpiral_autograd:
         Calculate the Poisson NLL against
         the validation data
         """
-
-        loss = 0.0
-        for idx, model in enumerate(self.fwd_model_lst):
-            y_est = model(**self.x)
-            loss += self.noise_model_lst[idx](**y_est,**self.y_val_lst[idx]).sum().item()
+        with torch.no_grad():
+            loss = 0.0
+            for idx, model in enumerate(self.fwd_model_lst):
+                y_est = model(**self.x)
+                loss += self.noise_model_lst[idx](**y_est,**self.y_val_lst[idx]).sum().item()
         return loss
     
     # TODO 
