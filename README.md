@@ -9,13 +9,13 @@ where $L(y,\alpha)$ is the statistical model for the noisy observations given pa
 
 The optimizer implementation here is based on the following published works:
 
-1.  Oh, A. K., Harmany, Z. T. & Willett, R. M. Logarithmic total variation regularization for cross-validation in photon-limited imaging. In 2013 IEEE International Conference on Image Processing, 484–488 (2013).
+1.  Oh, A. K., Harmany, Z. T. & Willett, R. M. Logarithmic total variation regularization for cross-validation in photon-limited imaging, In 2013 IEEE International Conference on Image Processing, 484–488, DOI: 10.1109/ICIP.2013.6738100 (2013).
 
-2. Harmany, Z. T., Marcia, R. F. & Willett, R. M. This is spiral-tap: Sparse Poisson intensity reconstruction algorithms-theory and practice. IEEE Trans. Image Process. 21, 1084–1096. DOI: 10.1109/TIP.2011.2168410 (2012).
+2. Harmany, Z. T., Marcia, R. F. & Willett, R. M. This is spiral-tap: Sparse Poisson intensity reconstruction algorithms-theory and practice. IEEE Trans. Image Process, 21, 1084–1096, DOI: 10.1109/TIP.2011.2168410 (2012).
 
-3. Beck, A. & Teboulle, M. Fast gradient-based algorithms for constrained total variation image denoising and deblurring problems. IEEE Trans. Image Process. 18, 2419–2434. DOI: 10.1109/TIP.2009.2028250 (2009).
+3. Beck, A. & Teboulle, M. Fast gradient-based algorithms for constrained total variation image denoising and deblurring problems, IEEE Trans. Image Process. 18, 2419–2434, DOI: 10.1109/TIP.2009.2028250 (2009).
 
-4. Wright, S. J. & Nowak, R. D. Sparse Reconstruction by Separable Approximation. IEEE Trans. Signal Processing, 57, 2479-2493 DOI: 10.1109/TSP.2009.2016892 (2009).
+4. Wright, S. J. & Nowak, R. D. Sparse Reconstruction by Separable Approximation, IEEE Trans. Signal Processing, 57, 2479-2493, DOI: 10.1109/TSP.2009.2016892 (2009).
 
 Work making use of software in this repository should cite one or more of the following works:
 
