@@ -153,8 +153,13 @@ def map_d2x_jit(p:torch.Tensor,q:torch.Tensor,x:torch.Tensor): #x:torch.tensor):
     Maps differential variables p and q (or r and s) to pixel space description
     of a 2D parameter space, x.
     This is script L in [1]
-    """    
-    
+    """
+
+    # x is a reused buffer. The trailing boundary row is only ever reached by a
+    # subtractive accumulation (x[1:,:] -= p), never a hard assignment, so it must
+    # start at zero -- otherwise it keeps the stale buffer value. Matches the
+    # eager-mode map_d2x, which allocates fresh zeros. (In-place: no allocation.)
+    x.zero_()
     x[:-1,:] = p
     x[:,:-1] = x[:,:-1] + q
     x[1:,:] = x[1:,:] - p
@@ -267,8 +272,9 @@ def map_d2x_2ndOrder_jit(p:torch.Tensor,q:torch.Tensor,x:torch.Tensor): #x:torch
     Maps differential variables p and q (or r and s) to pixel space description
     of a 2D parameter space, x.
     This is script L in [1]
-    """    
-    
+    """
+
+    x.zero_()  # zero the reused buffer first (see map_d2x_jit); here the last TWO rows would go stale
     x[:-2,:] = p
     x[1:-1,:] = x[1:-1,:] - 2 * p
     x[2:,:] = x[2:,:] + p
@@ -390,6 +396,7 @@ def map_d2x_1st2ndOrder_jit(p:torch.Tensor,q:torch.Tensor,x:torch.Tensor): #x:to
     This is script L in [1]
     """    
     
+    x.zero_()  # zero the reused buffer first (see map_d2x_jit) so the last time row isn't stale
     x[:-1,:] = p
     x[1:,:] = x[1:,:] - p
 

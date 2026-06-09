@@ -74,7 +74,7 @@ __global__ void fista_iterate(
             if (has_below)
                 d2x = r_yx;
             else
-                d2x = grad_a_yx;
+                d2x = scalar_t(0);   // last time row: adjoint base is 0, not the stale grad_a (matches map_d2x_jit's x.zero_())
 
             if (y)
                 d2x -= r[y-1][x];
@@ -165,7 +165,7 @@ __global__ void fista_gradient(
     if (has_below)
         d2x = r_k[y][x];
     else
-        d2x = grad_a[y][x];
+        d2x = scalar_t(0);   // last time row: adjoint base is 0, not the stale grad_a (matches map_d2x_jit's x.zero_())
 
     if (y)
         d2x -= r_k[y-1][x];
