@@ -27,7 +27,6 @@ source activate ptv-torch-cuda
 import os,sys
 import yaml
 
-
 # load file path information from the home directory
 file_path_yml = os.path.join(os.environ["HOME"], ".ncar_config_derecho.yaml")
 path_data = {}
@@ -41,13 +40,13 @@ dirP_str = os.path.join(
 if dirP_str not in sys.path:
     sys.path.append(dirP_str)
 
-# import will compile (if necessary) and load
-# cuda version of fista
-import SpiralTorch.cuda.st_fista_cuf
-
 # non-cuda fista library
 from SpiralTorch import fista
 
+# cuda version of fista.
+# gets compiled when you install into your env: pip install -e packages/STCuda
+# note that -e doesn't catch c++/cuda changes, need to (re)install
+import STCuda
 
 #### Test ####
 
@@ -63,11 +62,11 @@ if is_cuda:
 
 print(f'Preparing to use device {device}')
 
-dtype = torch.float64
+dtype = torch.float32
 
 # create a random test image
-x_axis = np.linspace(-10,10,64)
-y_axis = np.linspace(-10,10,128)
+x_axis = np.linspace(-10,10,289)
+y_axis = np.linspace(-10,10,397)
 x_ax_mesh,y_ax_mesh = np.meshgrid(x_axis,y_axis)
 
 rec_count = 80
@@ -95,7 +94,7 @@ x0 = {'backscatter':torch.tensor(alpha_arr,dtype=dtype,device=device)}
 alpha = 1e1
 x_lb = torch.zeros_like(x0['backscatter'])-1e10
 x_ub = torch.zeros_like(x0['backscatter'])+1e10
-cu_fista = SpiralTorch.cuda.st_fista_cuf.solve_FISTA_subproblem_kernel
+cu_fista = STCuda.ops.st_fista_subproblem
 
 res_cu = cu_fista(x0['backscatter'],torch.tensor(1e-1/alpha,device=device,dtype=dtype),x_lb,x_ub)
 
