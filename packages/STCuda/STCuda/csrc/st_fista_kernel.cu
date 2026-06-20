@@ -26,11 +26,10 @@ __global__ void fista_iterate(
     accessor_t        r,
     accessor_t        s,
     const accessor_t  b,
-    scalar_t          lam1,
+    const accessor_t  lam1,   // per-pixel TV weight field (scalar broadcast to a const field on the host)
     const accessor_t  lb,
     const accessor_t  ub,
     accessor_t        grad_a,
-    scalar_t          inv_8_lam1,
     int               width,
     int               height
 )
@@ -84,7 +83,7 @@ __global__ void fista_iterate(
 
             d2x += s_yx;
 
-            grad_a_yx = b_yx - lam1 * d2x;
+            grad_a_yx = b_yx - d2x;   // unweighted reconstruction; TV weight is in the projection radius
 
             //a = std::min(std::max(a, lb[y][x]), ub[y][x]);
 
@@ -102,9 +101,10 @@ __global__ void fista_iterate(
             // Map the gradient to differential space
             scalar_t grad_ad_p = grad_a_yx - grad_a[y+1][x];
 
-            // p update + projection
-            scalar_t p_new = r_yx + inv_8_lam1 * grad_ad_p;
-            p_new = p_new / max(abs(p_new), one);
+            // p update (unweighted 1/8 step) + projection onto the per-edge TV-weight radius
+            scalar_t lam1_p = scalar_t(0.5) * (lam1[y][x] + lam1[y+1][x]);   // time-edge radius
+            scalar_t p_new = r_yx + (one / scalar_t(8)) * grad_ad_p;
+            p_new = p_new / max(abs(p_new) / lam1_p, one);
 
             // Update normalized differential variables
             scalar_t r_new = p_new + (t_k - one) * inv_t_kp1 * (p_new - p_yx);
@@ -118,9 +118,10 @@ __global__ void fista_iterate(
             // Map the gradient to differential space
             scalar_t grad_ad_q = grad_a_yx - grad_a[y][x+1];
 
-            // q update + projection
-            scalar_t q_new = s_yx + inv_8_lam1 * grad_ad_q;
-            q_new = q_new / max(abs(q_new), one);
+            // q update (unweighted 1/8 step) + projection onto the per-edge TV-weight radius
+            scalar_t lam1_q = scalar_t(0.5) * (lam1[y][x] + lam1[y][x+1]);   // range-edge radius
+            scalar_t q_new = s_yx + (one / scalar_t(8)) * grad_ad_q;
+            q_new = q_new / max(abs(q_new) / lam1_q, one);
 
             // Update normalized differential variables
             scalar_t s_new = q_new + (t_k - one) * inv_t_kp1 * (q_new - q_yx);
@@ -143,11 +144,10 @@ __global__ void fista_gradient(
     const accessor_t  r_k,
     const accessor_t  s_k,
     const accessor_t  b,
-    scalar_t          lam1,
     accessor_t        grad_a,
     int               width,
     int               height
-)
+)   // reconstruction is unweighted now; the TV weight lives in fista_iteration's projection
 {
     const int x = blockIdx.x * BLOCK_X + threadIdx.x;
     const int y = blockIdx.y * BLOCK_Y + threadIdx.y;
@@ -175,7 +175,7 @@ __global__ void fista_gradient(
 
     d2x += s_k[y][x];
 
-    grad_a[y][x] = b[y][x] - lam1 * d2x;
+    grad_a[y][x] = b[y][x] - d2x;   // unweighted reconstruction
 
     //a = std::min(std::max(a, lb[y][x]), ub[y][x]);
 }
@@ -191,7 +191,7 @@ __global__ void fista_iteration(
     accessor_t        p_kp1,
     accessor_t        q_kp1,
     const accessor_t  grad_a,
-    scalar_t          inv_8_lam1,
+    const accessor_t  lam1,   // per-pixel TV weight field (per-edge radii below)
     scalar_t          t_k,
     scalar_t          inv_t_kp1,
     int               width,
@@ -213,9 +213,10 @@ __global__ void fista_iteration(
     {
         scalar_t grad_ad_p = grad_a[y][x] - grad_a[y+1][x];
 
-        // p update + projection
-        scalar_t p_new = r_k[y][x] + inv_8_lam1 * grad_ad_p;
-        p_new = p_new / max(abs(p_new), one);
+        // p update (unweighted 1/8 step) + projection onto the per-edge TV-weight radius
+        scalar_t lam1_p = scalar_t(0.5) * (lam1[y][x] + lam1[y+1][x]);   // time-edge radius
+        scalar_t p_new = r_k[y][x] + (one / scalar_t(8)) * grad_ad_p;
+        p_new = p_new / max(abs(p_new) / lam1_p, one);
 
         // Update normalized differential variables
         p_kp1[y][x] = p_new;
@@ -226,9 +227,10 @@ __global__ void fista_iteration(
     {
         scalar_t grad_ad_q = grad_a[y][x] - grad_a[y][x+1];
 
-        // q update + projection
-        scalar_t q_new = s_k[y][x] + inv_8_lam1 * grad_ad_q;
-        q_new = q_new / max(abs(q_new), one);
+        // q update (unweighted 1/8 step) + projection onto the per-edge TV-weight radius
+        scalar_t lam1_q = scalar_t(0.5) * (lam1[y][x] + lam1[y][x+1]);   // range-edge radius
+        scalar_t q_new = s_k[y][x] + (one / scalar_t(8)) * grad_ad_q;
+        q_new = q_new / max(abs(q_new) / lam1_q, one);
 
         // Update normalized differential variables
         q_kp1[y][x] = q_new;
@@ -261,8 +263,13 @@ at::Tensor fista_launch(
         auto ta_ub     =     ub.packed_accessor32<scalar_t, 2, at::RestrictPtrTraits>();
         auto ta_grad_a = grad_a.packed_accessor32<scalar_t, 2, at::RestrictPtrTraits>();
 
-        scalar_t lam1_      = lam1.item<scalar_t>();
-        scalar_t inv_8_lam1 = scalar_t(1) / (scalar_t(8) * lam1_);
+        // Materialize the TV weight as a full field; a scalar/0-dim lam1 is broadcast to a
+        // constant field so one kernel path serves both scalar and per-pixel weights. The
+        // weight enters the dual projection as per-edge radii (see fista_iterate/fista_iteration).
+        at::Tensor lam1_2d = (lam1.dim() == 0)
+            ? lam1.reshape({1, 1}).expand({height, width}).contiguous()
+            : lam1.contiguous();
+        auto ta_lam1 = lam1_2d.packed_accessor32<scalar_t, 2, at::RestrictPtrTraits>();
 
         using kernel_t = decltype(fista_iterate<scalar_t, decltype(ta_b)>);
         kernel_t* kernel = fista_iterate<scalar_t, decltype(ta_b)>;
@@ -283,11 +290,10 @@ at::Tensor fista_launch(
                 (void*)&ta_r,
                 (void*)&ta_s,
                 (void*)&ta_b,
-                (void*)&lam1_,
+                (void*)&ta_lam1,
                 (void*)&ta_lb,
                 (void*)&ta_ub,
                 (void*)&ta_grad_a,
-                (void*)&inv_8_lam1,
                 (void*)&width,
                 (void*)&height
             };
@@ -334,7 +340,7 @@ at::Tensor fista_launch(
 
                 fista_gradient<scalar_t><<<blocks, threads, 0, stream>>>(
                     ta_r_k, ta_s_k,
-                    ta_b, lam1_,
+                    ta_b,
                     ta_grad_a,
                     width, height);
 
@@ -343,7 +349,7 @@ at::Tensor fista_launch(
                     fista_iteration<scalar_t><<<blocks, threads, 0, stream>>>(
                         ta_r_k,   ta_s_k,   ta_p_k,   ta_q_k,
                         ta_r_kp1, ta_s_kp1, ta_p_kp1, ta_q_kp1,
-                        ta_grad_a, inv_8_lam1, t_k, inv_t_kp1,
+                        ta_grad_a, ta_lam1, t_k, inv_t_kp1,
                         width, height);
                 }
 
