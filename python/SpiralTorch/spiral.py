@@ -197,6 +197,13 @@ class sparsa_torch_autograd:
     def set_penalty_weight(self,tau:float):
         self.penalty_weight = torch.tensor(tau,device=self.device, dtype=self.dtype)
 
+    def set_penalty_weight_field(self, tau_field):
+        """Optional per-pixel TV weight field (same shape as x) for the weighted-TV FGP prox.
+        None falls back to the scalar penalty_weight. The field enters the prox as per-edge
+        projection radii (see SpiralTorch.fista); the scalar path is unchanged when unset."""
+        self.penalty_weight_field = None if tau_field is None else \
+            torch.as_tensor(tau_field, device=self.device, dtype=self.dtype)
+
 
         
     def load_fit_parameters(self,x:Dict[str,torch.tensor],
@@ -411,7 +418,11 @@ class sparsa_torch_autograd:
         return torch.sum(x_diff*x_grad_diff)/torch.linalg.norm(x_diff.ravel(), 2)**2
         
     def prox_gradient(self,x,x_grad,alpha):
-        x_p1 = self.fista(x-x_grad/alpha,self.penalty_weight/alpha,
+        # weighted-TV: use the per-pixel field if set, else the scalar penalty (unchanged path)
+        tv_weight = getattr(self, 'penalty_weight_field', None)
+        if tv_weight is None:
+            tv_weight = self.penalty_weight
+        x_p1 = self.fista(x-x_grad/alpha,tv_weight/alpha,
                         self.x_lb,self.x_ub)
             
         # obj_p1 = self.calc_loss(x_p1) + self.pen_fn(x_p1)
@@ -867,6 +878,16 @@ class multiSpiral_autograd:
             self.subprob_dct[var].set_penalty_weight(tv_penalty_flt)
         else:
             print("passed TV penalty for "+var+" but this is not defined as a subproblem in the current multiSpiral instance")
+
+    def set_tv_weight_fields(self,tv_weight_field_dct:Dict[str,object]):
+        """Per-variable per-pixel TV weight fields (var -> time x range field), parallel to
+        set_tv_penalties. Each field is routed to its subproblem's weighted-TV FGP prox; a
+        variable absent here keeps its scalar TV penalty."""
+        for var in tv_weight_field_dct:
+            if var in self.subprob_dct.keys():
+                self.subprob_dct[var].set_penalty_weight_field(tv_weight_field_dct[var])
+            else:
+                print("passed TV weight field for "+var+" but this is not defined as a subproblem in the current multiSpiral instance")
 
             
     def add_sparsa_config(self,sparsa_config_dct:Dict[str,dict]):
