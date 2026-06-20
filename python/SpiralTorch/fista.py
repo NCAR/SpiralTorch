@@ -227,24 +227,35 @@ def solve_FISTA_subproblem_jit(b:torch.Tensor,lam1:torch.Tensor,
     # grad_a_km1 = torch.zeros(b.shape,device=device)
     grad_a = torch.zeros(b.shape,device=device) # preallocate for map functions
 
+    # Weighted-TV re-parameterization: the TV weight lives in the dual-projection radius (below),
+    # NOT in the reconstruction or the 1/8 step -- so the operators and step stay unweighted and
+    # the 1/8 (||grad||^2<=8) is untouched. A scalar lam1 (0-dim) reproduces the original solver
+    # exactly; a per-pixel field is averaged onto the difference edges (per-edge radii).
+    if lam1.dim() == 0:
+        lam1_p = lam1
+        lam1_q = lam1
+    else:
+        lam1_p = 0.5*(lam1[:-1,:] + lam1[1:,:])   # 1st-order time edges, shape (M-1, N)
+        lam1_q = 0.5*(lam1[:,:-1] + lam1[:,1:])   # 1st-order range edges, shape (M, N-1)
+
     for _ in range(50):
-        grad_a = b - lam1*map_d2x_jit(r_k,s_k,grad_a) # compute the FISTA gradient
+        grad_a = b - map_d2x_jit(r_k,s_k,grad_a) # compute the FISTA gradient (unweighted recon)
 
         grad_a = torch.min(torch.max(grad_a,lb),ub)
 
         grad_ad = map_x2d_jit(grad_a)  # map the gradient to differential space
-        
-        # update estimates of differential variables
-        p_kp1= r_k + 1.0/(8.0*lam1)*grad_ad[0]
-        q_kp1= s_k + 1.0/(8.0*lam1)*grad_ad[1]
+
+        # update estimates of differential variables (unweighted 1/8 step)
+        p_kp1= r_k + 1.0/8.0*grad_ad[0]
+        q_kp1= s_k + 1.0/8.0*grad_ad[1]
         # p_kp1= p_k + 1.0/(8*lam1)*grad_ad[0]
         # q_kp1= q_k + 1.0/(8*lam1)*grad_ad[1]
 
-        # Willem performs this normalization step in his FISTA code but 
+        # Willem performs this normalization step in his FISTA code but
         # it does not appear in [1]
-        # Preform the projection step
-        p_kp1 = p_kp1 / torch.clamp (torch.abs (p_kp1),min= 1.0)
-        q_kp1 = q_kp1 / torch.clamp (torch.abs (q_kp1),min= 1.0)
+        # Projection onto the (per-edge) TV-weight ball of radius lam1_p / lam1_q
+        p_kp1 = p_kp1 / torch.clamp (torch.abs (p_kp1)/lam1_p,min= 1.0)
+        q_kp1 = q_kp1 / torch.clamp (torch.abs (q_kp1)/lam1_q,min= 1.0)
 
         t_kp1 = (1 + torch.sqrt(1+4*t_k**2))/2.0
         
@@ -348,24 +359,34 @@ def solve_FISTA_subproblem_2ndOrder_jit(b:torch.Tensor,lam1:torch.Tensor,
     # grad_a_km1 = torch.zeros(b.shape,device=device)
     grad_a = torch.zeros(b.shape,device=device) # preallocate for map functions
 
+    # Weighted-TV re-parameterization (see solve_FISTA_subproblem_jit): weight lives in the
+    # projection radius, not the reconstruction/step. Scalar lam1 reproduces the original solver;
+    # a per-pixel field is averaged over each 2nd-difference's 3-pixel support onto the edges.
+    if lam1.dim() == 0:
+        lam1_p = lam1
+        lam1_q = lam1
+    else:
+        lam1_p = (lam1[:-2,:] + lam1[1:-1,:] + lam1[2:,:])/3.0   # 2nd-order time edges, (M-2, N)
+        lam1_q = (lam1[:,:-2] + lam1[:,1:-1] + lam1[:,2:])/3.0   # 2nd-order range edges, (M, N-2)
+
     for _ in range(50):
-        grad_a = b - lam1*map_d2x_2ndOrder_jit(r_k,s_k,grad_a) # compute the FISTA gradient
+        grad_a = b - map_d2x_2ndOrder_jit(r_k,s_k,grad_a) # compute the FISTA gradient (unweighted recon)
 
         grad_a = torch.min(torch.max(grad_a,lb),ub)
 
         grad_ad = map_x2d_2ndOrder_jit(grad_a)  # map the gradient to differential space
-        
-        # update estimates of differential variables
-        p_kp1= r_k + 1.0/(8*lam1)*grad_ad[0]
-        q_kp1= s_k + 1.0/(8*lam1)*grad_ad[1]
+
+        # update estimates of differential variables (unweighted 1/8 step)
+        p_kp1= r_k + 1.0/8.0*grad_ad[0]
+        q_kp1= s_k + 1.0/8.0*grad_ad[1]
         # p_kp1= p_k + 1.0/(8*lam1)*grad_ad[0]
         # q_kp1= q_k + 1.0/(8*lam1)*grad_ad[1]
 
-        # Willem performs this normalization step in his FISTA code but 
+        # Willem performs this normalization step in his FISTA code but
         # it does not appear in [1]
-        # Preform the projection step
-        p_kp1 = p_kp1 / torch.clamp (torch.abs (p_kp1),min= 1.0)
-        q_kp1 = q_kp1 / torch.clamp (torch.abs (q_kp1),min= 1.0)
+        # Projection onto the (per-edge) TV-weight ball of radius lam1_p / lam1_q
+        p_kp1 = p_kp1 / torch.clamp (torch.abs (p_kp1)/lam1_p,min= 1.0)
+        q_kp1 = q_kp1 / torch.clamp (torch.abs (q_kp1)/lam1_q,min= 1.0)
 
         t_kp1 = (1 + torch.sqrt(1+4*t_k**2))/2.0
         
@@ -469,24 +490,34 @@ def solve_FISTA_subproblem_1st2ndOrder_jit(b:torch.Tensor,lam1:torch.Tensor,
     # grad_a_km1 = torch.zeros(b.shape,device=device)
     grad_a = torch.zeros(b.shape,device=device) # preallocate for map functions
 
+    # Weighted-TV re-parameterization (see solve_FISTA_subproblem_jit): weight lives in the
+    # projection radius. Scalar lam1 reproduces the original solver; a per-pixel field is averaged
+    # onto the edges -- 2-pixel (1st-order) support in time, 3-pixel (2nd-order) support in range.
+    if lam1.dim() == 0:
+        lam1_p = lam1
+        lam1_q = lam1
+    else:
+        lam1_p = 0.5*(lam1[:-1,:] + lam1[1:,:])                  # 1st-order time edges, (M-1, N)
+        lam1_q = (lam1[:,:-2] + lam1[:,1:-1] + lam1[:,2:])/3.0   # 2nd-order range edges, (M, N-2)
+
     for _ in range(50):
-        grad_a = b - lam1*map_d2x_1st2ndOrder_jit(r_k,s_k,grad_a) # compute the FISTA gradient
+        grad_a = b - map_d2x_1st2ndOrder_jit(r_k,s_k,grad_a) # compute the FISTA gradient (unweighted recon)
 
         grad_a = torch.min(torch.max(grad_a,lb),ub)
 
         grad_ad = map_x2d_1st2ndOrder_jit(grad_a)  # map the gradient to differential space
-        
-        # update estimates of differential variables
-        p_kp1= r_k + 1.0/(8*lam1)*grad_ad[0]
-        q_kp1= s_k + 1.0/(8*lam1)*grad_ad[1]
+
+        # update estimates of differential variables (unweighted 1/8 step)
+        p_kp1= r_k + 1.0/8.0*grad_ad[0]
+        q_kp1= s_k + 1.0/8.0*grad_ad[1]
         # p_kp1= p_k + 1.0/(8*lam1)*grad_ad[0]
         # q_kp1= q_k + 1.0/(8*lam1)*grad_ad[1]
 
-        # Willem performs this normalization step in his FISTA code but 
+        # Willem performs this normalization step in his FISTA code but
         # it does not appear in [1]
-        # Preform the projection step
-        p_kp1 = p_kp1 / torch.clamp (torch.abs (p_kp1),min= 1.0)
-        q_kp1 = q_kp1 / torch.clamp (torch.abs (q_kp1),min= 1.0)
+        # Projection onto the (per-edge) TV-weight ball of radius lam1_p / lam1_q
+        p_kp1 = p_kp1 / torch.clamp (torch.abs (p_kp1)/lam1_p,min= 1.0)
+        q_kp1 = q_kp1 / torch.clamp (torch.abs (q_kp1)/lam1_q,min= 1.0)
 
         t_kp1 = (1 + torch.sqrt(1+4*t_k**2))/2.0
         
