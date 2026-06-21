@@ -36,7 +36,11 @@ at::Tensor st_fista_subproblem(
     TORCH_CHECK(lb.is_cuda(),   "lb must be GPU");
     TORCH_CHECK(ub.is_cuda(),   "ub must be GPU");
 
-    return fista_launch(b, lam1.cpu(), lb, ub);
+    // Weighted TV: lam1 is now a (scalar-or-per-pixel) field consumed on the device by the
+    // FGP kernel, so it must live on b's device/dtype. (The original scalar code read lam1
+    // host-side via .item() and so moved it to CPU here -- that .cpu() now strands the field
+    // on the host and the kernel dereferences a host pointer.)
+    return fista_launch(b, lam1.to(b.options()), lb, ub);
 }
 
 TORCH_LIBRARY(STCuda, m) {
