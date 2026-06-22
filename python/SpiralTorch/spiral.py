@@ -17,7 +17,10 @@ from typing import List, Dict, Callable
 
 import copy
 
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)  # DEBUG ONLY -- left off in production. This is a GLOBAL
+# flag set at import: it ~2x-slows every backward in the whole process and turns recoverable NaNs
+# (e.g. an fp32 exp overflow inside a curvature/Hessian probe) into hard RuntimeErrors instead of
+# letting them be handled. Re-enable locally when chasing a NaN: `with torch.autograd.detect_anomaly():`.
 
 def poisson_thin(signal:np.ndarray,n:int=2)->List:
     """
