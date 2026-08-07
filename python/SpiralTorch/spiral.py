@@ -176,6 +176,7 @@ class sparsa_torch_autograd:
     def set_max_iter(self,max_iter:int):
         self.max_iter = max_iter
         self.objective_tnsr = torch.zeros(max_iter+1,device=self.device, dtype=self.dtype)
+        self.nll_tnsr = torch.zeros(max_iter+1,device=self.device, dtype=self.dtype)
         self.rel_step_tnsr = torch.zeros(max_iter+1,device=self.device, dtype=self.dtype)
         self.alpha_tnsr = torch.zeros(max_iter+1,device=self.device, dtype=self.dtype)
     
@@ -429,7 +430,8 @@ class sparsa_torch_autograd:
                         self.x_lb,self.x_ub)
             
         # obj_p1 = self.calc_loss(x_p1) + self.pen_fn(x_p1)
-        obj_p1 = self.calc_loss_fast(x_p1) + self.pen_fn(x_p1)
+        nll_p1 = self.calc_loss_fast(x_p1)
+        obj_p1 = nll_p1 + self.pen_fn(x_p1)
         dx_l2_norm_p1 = torch.linalg.norm((x_p1 - x).ravel(), 2)**2
 
         # print(f"{self.loop_iter}, {self.alpha}: {dx_l2_norm_p1}, {obj_p1}")
@@ -442,10 +444,8 @@ class sparsa_torch_autograd:
 
         # if torch.isnan(x_p1).sum() > 0:
         #     print(f"{torch.isnan(x_p1).sum()} nans in x_p1")
-
         
-        
-        return x_p1, obj_p1, dx_l2_norm_p1
+        return x_p1, obj_p1, dx_l2_norm_p1, nll_p1
     
     def acceptance_criteria(self,obj_value,alpha,dx_norm_l2):
         hist_idx = np.maximum(self.loop_iter-self.M_hist,0)
@@ -468,6 +468,7 @@ class sparsa_torch_autograd:
         loss = self.calc_loss(self.x)
         self.objective_tnsr[0] = loss + self.pen_fn(self.x)
         self.alpha_tnsr[self.loop_iter] = self.alpha
+        self.nll_tnsr[self.loop_iter] = loss
         loss.backward()  # backprop the gradient
         x_grad = copy.deepcopy(self.x.grad)
         x_sqrt_l2_norm = torch.linalg.norm(self.x.ravel(), 2)
@@ -483,11 +484,11 @@ class sparsa_torch_autograd:
 
         while True: 
             with torch.no_grad(): 
-                x_p1, obj_p1, dx_l2_norm_p1 = self.prox_gradient(self.x,x_grad,self.alpha)
+                x_p1, obj_p1, dx_l2_norm_p1, nll_p1 = self.prox_gradient(self.x,x_grad,self.alpha)
                 
                 while (not self.acceptance_criteria(obj_p1,self.alpha,dx_l2_norm_p1)) and (self.alpha <= self.alpha_max):
                     self.alpha *= self.eta
-                    x_p1, obj_p1, dx_l2_norm_p1 = self.prox_gradient(self.x,x_grad,self.alpha)
+                    x_p1, obj_p1, dx_l2_norm_p1, nll_p1 = self.prox_gradient(self.x,x_grad,self.alpha)
 
                 # print(f"  x[1,60]: {self.x[1,60].item()}")
                 # print(f"  xp1[1,60]: {x_p1[1,60].item()}")
@@ -545,6 +546,7 @@ class sparsa_torch_autograd:
                         
                     self.objective_tnsr[self.loop_iter] = obj_p1
                     self.rel_step_tnsr[self.loop_iter] = rel_step
+                    self.nll_tnsr[self.loop_iter] = nll_p1
 
                     # update x values
                     x_diff = x_p1-self.x

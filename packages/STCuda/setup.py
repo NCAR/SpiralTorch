@@ -23,6 +23,15 @@ else:
 def get_extensions():
     debug_mode = os.getenv("DEBUG", "0") == "1"
 
+    # Casper has both V100 (sm_70) and A100 (sm_80) GPU nodes. Default to a multi-arch
+    # ("fat") build so a single compiled .so runs natively on either card. Without this,
+    # CUDAExtension auto-detects only the *build* node's GPU, so the kernel carries one arch
+    # and fails on the other (CUDA error 222 "the provided PTX was compiled with an
+    # unsupported toolchain", when the driver must JIT the embedded PTX). setdefault keeps it
+    # overridable via `TORCH_CUDA_ARCH_LIST=...`. As a bonus this also avoids the login-node
+    # build crash (arch auto-detect IndexError when no GPU is present).
+    os.environ.setdefault("TORCH_CUDA_ARCH_LIST", "7.0;8.0")
+
     extra_link_args = []
     extra_compile_args = {
         "cxx": [
