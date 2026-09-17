@@ -5,6 +5,10 @@ import torch
 from typing import List
 
 pi_const = 3.14159265359
+log_eps = 1e-6  # floor applied before torch.log()/division so that a masked-out
+                # pixel whose argument reaches ~0 can't blow up to an inf local
+                # gradient (which then combines with a zero mask weight to give
+                # a NaN gradient instead of a zero one)
 
 
 
@@ -60,7 +64,7 @@ def pois_loss_fn(
         total channel weighting
     
     """
-    return channel_weight*(channel_mask*(shot_count*y_mean_est-counts*torch.log(y_mean_est)))
+    return channel_weight*(channel_mask*(shot_count*y_mean_est-counts*torch.log(torch.clamp(y_mean_est,min=log_eps))))
 
 def pois_bg_loss_fn(
         y_mean_est:torch.tensor=None,
@@ -94,7 +98,7 @@ def pois_bg_loss_fn(
         total channel weighting
     
     """
-    return channel_weight*(channel_mask*(shot_count*(y_mean_est+bg)-counts*torch.log(y_mean_est+bg)))
+    return channel_weight*(channel_mask*(shot_count*(y_mean_est+bg)-counts*torch.log(torch.clamp(y_mean_est+bg,min=log_eps))))
 
 def deadtime_loss_fn(
         y_mean_est:torch.tensor=None,
@@ -123,7 +127,7 @@ def deadtime_loss_fn(
         total channel weighting  
     """
 
-    return channel_weight*(channel_mask*(active_time*y_mean_est-counts*torch.log(y_mean_est)))
+    return channel_weight*(channel_mask*(active_time*y_mean_est-counts*torch.log(torch.clamp(y_mean_est,min=log_eps))))
 
 def deadtime_bg_loss_fn(
         y_mean_est:torch.tensor=None,
@@ -157,7 +161,7 @@ def deadtime_bg_loss_fn(
         total channel weighting  
     """
 
-    return channel_weight*(channel_mask*(active_time*(y_mean_est+bg)-counts*torch.log(y_mean_est+bg)))
+    return channel_weight*(channel_mask*(active_time*(y_mean_est+bg)-counts*torch.log(torch.clamp(y_mean_est+bg,min=log_eps))))
 
 def gaus_fn(
         y_mean_est:torch.tensor=None,
@@ -186,7 +190,8 @@ def gaus_fn(
         from observations
         total channel weighting 
     """ 
-    return channel_weight*(channel_mask*(0.5*torch.log(2.0*pi_const*y_var_est*shot_count**2)+(y_mean_est*shot_count-counts)**2/(2*y_var_est*shot_count**2)))
+    var_term = torch.clamp(y_var_est*shot_count**2,min=log_eps)
+    return channel_weight*(channel_mask*(0.5*torch.log(2.0*pi_const*var_term)+(y_mean_est*shot_count-counts)**2/(2*var_term)))
     
 
 def gaus_mean_fn(
@@ -220,7 +225,8 @@ def gaus_mean_fn(
         total channel weighting 
     """ 
 
-    return channel_weight*(channel_mask*((y_mean_est*shot_count-counts)**2/(2*variance*shot_count**2)))
+    var_term = torch.clamp(variance*shot_count**2,min=log_eps)
+    return channel_weight*(channel_mask*((y_mean_est*shot_count-counts)**2/(2*var_term)))
 
 
 noise_model_dct = {
