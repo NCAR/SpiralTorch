@@ -147,6 +147,9 @@ class sparsa_torch_autograd:
         
         # set default value for terminating SpaRSA
         self.set_eps(1e-5)
+
+        # set default value for terminating SpaRSA
+        self.set_eps_abs(-np.inf)
         
         # set default value for TV penalty
         self.set_penalty_weight(1.0)
@@ -197,6 +200,9 @@ class sparsa_torch_autograd:
         
     def set_eps(self,eps:float):
         self.eps = torch.tensor(eps,device=self.device, dtype=self.dtype)
+
+    def set_eps_abs(self,eps:float):
+        self.eps_abs = torch.tensor(eps,device=self.device, dtype=self.dtype)
     
     def set_penalty_weight(self,tau:float):
         self.penalty_weight = torch.tensor(tau,device=self.device, dtype=self.dtype)
@@ -475,7 +481,9 @@ class sparsa_torch_autograd:
         # store the initial state to calculate the step size of
         # the entire subproblem
         x_sqrt_l2_norm_init = x_sqrt_l2_norm
-        x0 = copy.deepcopy(self.x.data)  
+        x0 = copy.deepcopy(self.x.data)
+        n_el = torch.numel(self.x)  
+        n_el_sqrt = np.sqrt(n_el)
 
         # print(f"  start alpha {self.alpha.item()}")
         # print(f"  start loss {loss.item()}")
@@ -541,8 +549,10 @@ class sparsa_torch_autograd:
                     # calculate relative step size
                     if x_sqrt_l2_norm == 0:
                         rel_step = np.inf
+                        dx_sqrt_l2_norm_p1 = torch.sqrt(dx_l2_norm_p1)
                     else:
-                        rel_step = torch.sqrt(dx_l2_norm_p1) / x_sqrt_l2_norm
+                        dx_sqrt_l2_norm_p1 = torch.sqrt(dx_l2_norm_p1)
+                        rel_step = dx_sqrt_l2_norm_p1 / x_sqrt_l2_norm
                         
                     self.objective_tnsr[self.loop_iter] = obj_p1
                     self.rel_step_tnsr[self.loop_iter] = rel_step
@@ -606,9 +616,9 @@ class sparsa_torch_autograd:
                 self.alpha = torch.clamp(self.alpha,min=self.alpha_min,max=self.alpha_max)
             
             
-            if (rel_step < self.eps) and (self.loop_iter > self.min_iter):
+            if ((rel_step < self.eps) or (dx_sqrt_l2_norm_p1 < n_el_sqrt*self.eps_abs)) and (self.loop_iter > self.min_iter):
                 # print("Found Minimum")
-                status_str = f"Found Minimum for eps {self.eps}. Final step: {rel_step}"
+                status_str = f"Found Minimum for eps: {self.eps}, abs_eps: {self.eps_abs}. Final step: {rel_step}, absolute step: {dx_sqrt_l2_norm_p1/n_el_sqrt}"
                 break
             
             if self.loop_iter >= self.max_iter:
@@ -958,6 +968,9 @@ class multiSpiral_autograd:
             
             if 'eps' in sparsa_config_dct[var].keys():
                 self.subprob_dct[var].set_eps(sparsa_config_dct[var]['eps'])
+
+            if 'eps_abs' in sparsa_config_dct[var].keys():
+                self.subprob_dct[var].set_eps_abs(sparsa_config_dct[var]['eps_abs'])
 
             if 'x_lower_bound' in sparsa_config_dct[var].keys():
                 self.x_lb[var] = sparsa_config_dct[var]['x_lower_bound']
