@@ -626,6 +626,9 @@ class sparsa_torch_autograd:
                 status_str = f"Maximum Iterations Exceeded. Final step: {rel_step}"
                 break
 
+            # if (self.loop_iter % 500) == 0:
+            #     print(f"Check in at: {self.loop_iter} for eps: {self.eps}, abs_eps: {self.eps_abs}. Final step: {rel_step}, absolute step: {dx_sqrt_l2_norm_p1/n_el_sqrt}")
+
             if time.time() - self.start_time > self.timeout:
                 status_str = f"Exceeded maximum SPARSA time of {self.timeout} seconds"
                 break
@@ -959,6 +962,9 @@ class multiSpiral_autograd:
 
             if 'eta' in sparsa_config_dct[var].keys():
                 self.subprob_dct[var].set_eta(sparsa_config_dct[var]['eta'])
+
+            if 'sigma' in sparsa_config_dct[var].keys():
+                            self.subprob_dct[var].set_sigma(sparsa_config_dct[var]['sigma'])
 
             if 'max_iter' in sparsa_config_dct[var].keys():
                 self.subprob_dct[var].set_max_iter(sparsa_config_dct[var]['max_iter'])
